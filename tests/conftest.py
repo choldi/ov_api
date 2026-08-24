@@ -39,3 +39,15 @@ def _reset_singletons():
     # Cleanup post-test si hace falta
     if hasattr(OmniVoiceEngine, "_instance"):
         OmniVoiceEngine._instance = None
+
+
+@pytest.fixture
+def sample_text() -> str:
+    """Texto de ejemplo para tests de TTS."""
+    return "Hola, esto es una prueba de síntesis de voz."
+
+
+@pytest.fixture
+def sample_voice_id() -> str:
+    """ID de voz de ejemplo para tests."""
+    return "es-mx-male"
