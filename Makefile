@@ -23,6 +23,8 @@ ifeq ($(OS),Windows_NT)
     NULL := nul
     SHELL := cmd.exe
     .SHELLFLAGS := /c
+    # Windows no tiene 'true', usamos 'rem' (no-op) o condicionales
+    TRUE_CMD := rem
 else
     # Unix/Linux/macOS
     PYTHON := python3
@@ -41,6 +43,7 @@ else
     FIND_PYC := find . -type f -name "*.pyc" -delete
     NULL := /dev/null
     SHELL := /bin/bash
+    TRUE_CMD := true
 endif
 
 # Default target
@@ -111,14 +114,33 @@ download-model: install
 	$(MKDIR_P) models/omnivoice
 	$(TOUCH) models/omnivoice/.gitkeep
 
+# Clean target with OS-specific commands
+ifeq ($(OS),Windows_NT)
 clean:
-	$(RM_RF) $(VENV) 2>$(NULL) || true
-	$(RM_RF) .mypy_cache .ruff_cache .pytest_cache 2>$(NULL) || true
-	$(RM_RF) storage/outputs/* 2>$(NULL) || true
+	$(RM_RF) $(VENV) 2>$(NULL) || $(TRUE_CMD)
+	$(RM_RF) .mypy_cache 2>$(NULL) || $(TRUE_CMD)
+	$(RM_RF) .ruff_cache 2>$(NULL) || $(TRUE_CMD)
+	$(RM_RF) .pytest_cache 2>$(NULL) || $(TRUE_CMD)
+	$(RM_RF) storage\outputs\* 2>$(NULL) || $(TRUE_CMD)
 	$(FIND_PYCACHE)
 	$(FIND_PYC)
+	@echo "Cleanup complete"
+else
+clean:
+	$(RM_RF) $(VENV) 2>$(NULL) || $(TRUE_CMD)
+	$(RM_RF) .mypy_cache .ruff_cache .pytest_cache 2>$(NULL) || $(TRUE_CMD)
+	$(RM_RF) storage/outputs/* 2>$(NULL) || $(TRUE_CMD)
+	$(FIND_PYCACHE)
+	$(FIND_PYC)
+	@echo "Cleanup complete"
+endif
 
 # Pre-commit
 pre-commit: install
-	$(VENV)/bin/pre-commit install 2>$(NULL) || $(VENV)\Scripts\pre-commit.exe install
-	$(VENV)/bin/pre-commit run --all-files 2>$(NULL) || $(VENV)\Scripts\pre-commit.exe run --all-files
+ifeq ($(OS),Windows_NT)
+	$(VENV)\Scripts\pre-commit.exe install
+	$(VENV)\Scripts\pre-commit.exe run --all-files
+else
+	$(VENV)/bin/pre-commit install
+	$(VENV)/bin/pre-commit run --all-files
+endif
