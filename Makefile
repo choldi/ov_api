@@ -69,7 +69,7 @@ install:
 	@echo "Creando entorno virtual en $(VENV)..."
 	$(PYTHON) -m venv $(VENV)
 	@echo "Actualizando pip..."
-	$(PIP) install --upgrade pip
+	$(PYTHON) -m pip install --upgrade pip
 	@echo "Instalando dependencias del proyecto..."
 	$(PIP) install -e ".[dev]"
 	@echo "Entorno virtual creado y dependencias instaladas en $(VENV)"
