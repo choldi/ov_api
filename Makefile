@@ -1,7 +1,7 @@
 # Makefile para OmniVoice API - Compatible con Windows y Unix
 # Uso: make <target>
 
-.PHONY: help install test lint format run dev clean check-gpu download-model pre-commit test-unit test-integration test-load
+.PHONY: help install test lint format run dev clean check-gpu check-omnivoice-install download-model pre-commit test-unit test-integration test-load
 
 # Detectar sistema operativo
 ifeq ($(OS),Windows_NT)
@@ -49,19 +49,20 @@ endif
 help:
 	@echo "OmniVoice API - Comandos disponibles:"
 	@echo ""
-	@echo "  make install        - Instala dependencias en entorno virtual"
-	@echo "  make test           - Ejecuta tests con cobertura"
-	@echo "  make test-unit      - Ejecuta solo tests unitarios"
-	@echo "  make test-integration - Ejecuta tests de integración"
-	@echo "  make test-load      - Ejecuta tests de carga"
-	@echo "  make lint           - Ejecuta ruff y mypy"
-	@echo "  make format         - Formatea código con ruff y black"
-	@echo "  make run            - Inicia servidor en producción"
-	@echo "  make dev            - Inicia servidor en modo desarrollo (reload)"
-	@echo "  make check-gpu      - Verifica disponibilidad de GPU/CUDA"
-	@echo "  make download-model - Descarga modelo OmniVoice (placeholder)"
-	@echo "  make clean          - Limpia cachés y archivos temporales"
-	@echo "  make pre-commit     - Instala y ejecuta pre-commit hooks"
+	@echo "  make install              - Instala dependencias en entorno virtual"
+	@echo "  make test                 - Ejecuta tests con cobertura"
+	@echo "  make test-unit            - Ejecuta solo tests unitarios"
+	@echo "  make test-integration     - Ejecuta tests de integración"
+	@echo "  make test-load            - Ejecuta tests de carga"
+	@echo "  make lint                 - Ejecuta ruff y mypy"
+	@echo "  make format               - Formatea código con ruff y black"
+	@echo "  make run                  - Inicia servidor en producción"
+	@echo "  make dev                  - Inicia servidor en modo desarrollo (reload)"
+	@echo "  make check-gpu            - Verifica disponibilidad de GPU/CUDA"
+	@echo "  make check-omnivoice-install - Verifica la instalación externa de OmniVoice"
+	@echo "  make download-model       - Descarga modelo OmniVoice (placeholder)"
+	@echo "  make clean                - Limpia cachés y archivos temporales"
+	@echo "  make pre-commit           - Instala y ejecuta pre-commit hooks"
 	@echo ""
 
 # Instalación - siempre ejecuta los comandos (phony)
@@ -107,6 +108,24 @@ dev: install
 check-gpu: install
 	@$(PYTHON) -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}'); print(f'GPU count: {torch.cuda.device_count()}'); [print(f'  GPU {i}: {torch.cuda.get_device_name(i)}') for i in range(torch.cuda.device_count())]"
 
+check-omnivoice-install:
+	@echo "Verificando instalación externa de OmniVoice..."
+	@$(PYTHON) -c "import os, sys; from pathlib import Path; \
+from omnivoice_api.core.engine_paths import validate_installation, default_install_dir, default_venv_dir; \
+install_dir = default_install_dir(); \
+venv_dir = default_venv_dir(); \
+print(f'OMNIVOICE_PATH     = {os.environ.get(\"OMNIVOICE_PATH\", \"<no definido>\")}'); \
+print(f'OMNIVOICE_INSTALL_DIR = {install_dir}'); \
+print(f'OMNIVOICE_VENV_DIR    = {venv_dir}'); \
+try: \
+    python_bin = validate_installation(install_dir, venv_dir); \
+    print(f'OK: Python del venv = {python_bin}'); \
+    sys.exit(0); \
+except Exception as exc: \
+    print(f'ERROR: {exc}'); \
+    print('Define OMNIVOICE_PATH en .env apuntando al directorio raíz de la instalación externa.'); \
+    sys.exit(1)"
+
 download-model: install
 	@echo "Descargando modelo OmniVoice..."
 	@echo "TODO: Implementar descarga real del modelo desde HuggingFace o fuente oficial"
@@ -143,3 +162,4 @@ else
 	$(VENV)/bin/pre-commit install
 	$(VENV)/bin/pre-commit run --all-files
 endif
+
