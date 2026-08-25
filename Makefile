@@ -113,32 +113,9 @@ check-gpu: install
 check-omnivoice-install: install
 	@echo "Verificando instalación externa de OmniVoice..."
 	@echo "(1) Validando paths y existencia del venv externo..."
-	@$(PYTHON_VENV) -c "import os, sys; from pathlib import Path; \
-from omnivoice_api.core.engine_paths import validate_installation, default_install_dir, default_venv_dir; \
-install_dir = default_install_dir(); \
-venv_dir = default_venv_dir(); \
-print(f'  OMNIVOICE_PATH        = {os.environ.get(\"OMNIVOICE_PATH\", \"<no definido>\")}'); \
-print(f'  OMNIVOICE_INSTALL_DIR = {install_dir}'); \
-print(f'  OMNIVOICE_VENV_DIR    = {venv_dir}'); \
-try: \
-    python_bin = validate_installation(install_dir, venv_dir); \
-    print(f'  OK: Python del venv externo = {python_bin}'); \
-except Exception as exc: \
-    print(f'  ERROR: {exc}'); \
-    print('  Define OMNIVOICE_PATH en .env apuntando al directorio raíz de la instalación externa.'); \
-    sys.exit(1)"
+	@$(PYTHON_VENV) -c "import os, sys; from pathlib import Path; from omnivoice_api.core.engine_paths import validate_installation, default_install_dir, default_venv_dir; install_dir = default_install_dir(); venv_dir = default_venv_dir(); print(f'  OMNIVOICE_PATH        = {os.environ.get(\"OMNIVOICE_PATH\", \"<no definido>\")}'); print(f'  OMNIVOICE_INSTALL_DIR = {install_dir}'); print(f'  OMNIVOICE_VENV_DIR    = {venv_dir}'); try: python_bin = validate_installation(install_dir, venv_dir); print(f'  OK: Python del venv externo = {python_bin}'); except Exception as exc: print(f'  ERROR: {exc}'); print('  Define OMNIVOICE_PATH en .env apuntando al directorio raíz de la instalación externa.'); sys.exit(1)"
 	@echo "(2) Verificando que el venv externo tiene las dependencias de OmniVoice..."
-	@$(PYTHON_VENV) -c "import os, sys; from pathlib import Path; \
-from omnivoice_api.core.engine_paths import validate_installation, default_install_dir, default_venv_dir; \
-install_dir = default_install_dir(); \
-venv_dir = default_venv_dir(); \
-python_bin = validate_installation(install_dir, venv_dir); \
-print(f'  Usando Python: {python_bin}'); \
-import subprocess; \
-result = subprocess.run([python_bin, '-c', 'import omnivoice; print(f\"  omnivoice importado OK desde: {omnivoice.__file__}\")'], capture_output=True, text=True); \
-sys.stdout.write(result.stdout); \
-sys.stderr.write(result.stderr); \
-sys.exit(result.returncode)"
+	@$(PYTHON_VENV) -c "import os, sys; from pathlib import Path; from omnivoice_api.core.engine_paths import validate_installation, default_install_dir, default_venv_dir; install_dir = default_install_dir(); venv_dir = default_venv_dir(); python_bin = validate_installation(install_dir, venv_dir); print(f'  Usando Python: {python_bin}'); import subprocess; result = subprocess.run([python_bin, '-c', 'import omnivoice; print(f\"  omnivoice importado OK desde: {omnivoice.__file__}\")'], capture_output=True, text=True); sys.stdout.write(result.stdout); sys.stderr.write(result.stderr); sys.exit(result.returncode)"
 
 download-model: install
 	@echo "Descargando modelo OmniVoice..."
@@ -176,4 +153,3 @@ else
 	$(VENV)/bin/pre-commit install
 	$(VENV)/bin/pre-commit run --all-files
 endif
-
