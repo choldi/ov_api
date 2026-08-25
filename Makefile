@@ -1,7 +1,7 @@
 # Makefile para OmniVoice API - Compatible con Windows y Unix
 # Uso: make <target>
 
-.PHONY: help install test lint format run dev clean check-gpu download-model pre-commit
+.PHONY: help install test lint format run dev clean check-gpu download-model pre-commit test-unit test-integration test-load
 
 # Detectar sistema operativo
 ifeq ($(OS),Windows_NT)
@@ -23,7 +23,6 @@ ifeq ($(OS),Windows_NT)
     NULL := nul
     SHELL := cmd.exe
     .SHELLFLAGS := /c
-    # Windows no tiene 'true', usamos 'rem' (no-op) o condicionales
     TRUE_CMD := rem
 else
     # Unix/Linux/macOS
@@ -65,14 +64,15 @@ help:
 	@echo "  make pre-commit     - Instala y ejecuta pre-commit hooks"
 	@echo ""
 
-# Instalación
-install: $(ACTIVATE)
-
-$(ACTIVATE): pyproject.toml
+# Instalación - siempre ejecuta los comandos (phony)
+install:
+	@echo "Creando entorno virtual en $(VENV)..."
 	$(PYTHON) -m venv $(VENV)
+	@echo "Actualizando pip..."
 	$(PIP) install --upgrade pip
+	@echo "Instalando dependencias del proyecto..."
 	$(PIP) install -e ".[dev]"
-	@echo "Entorno virtual creado en $(VENV)"
+	@echo "Entorno virtual creado y dependencias instaladas en $(VENV)"
 
 # Tests
 test: install
@@ -127,8 +127,7 @@ clean:
 	@echo "Cleanup complete"
 else
 clean:
-	$(RM_RF) $(VENV) 2>$(NULL) || $(TRUE_CMD)
-	$(RM_RF) .mypy_cache .ruff_cache .pytest_cache 2>$(NULL) || $(TRUE_CMD)
+	$(RM_RF) $(VENV) .mypy_cache .ruff_cache .pytest_cache 2>$(NULL) || $(TRUE_CMD)
 	$(RM_RF) storage/outputs/* 2>$(NULL) || $(TRUE_CMD)
 	$(FIND_PYCACHE)
 	$(FIND_PYC)
