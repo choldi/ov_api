@@ -1,3 +1,4 @@
+"""Script de verificación de la instalación externa de OmniVoice.
 
 Uso:
     python scripts/check_omnivoice_install.py
@@ -74,4 +75,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
