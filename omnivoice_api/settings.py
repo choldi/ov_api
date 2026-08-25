@@ -1,10 +1,22 @@
-"""Configuración de la aplicación usando pydantic-settings."""
+"""Configuración de la aplicación usando pydantic-settings.
+
+OmniVoice NO se instala como dependencia de este proyecto. Se consume desde
+una instalación externa (ver ``docs/INSTALLATION.md``).
+"""
+
+from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from omnivoice_api.core.engine_paths import (
+    default_install_dir,
+    default_venv_dir,
+    python_bin_from_venv,
+)
 
 
 class Settings(BaseSettings):
@@ -23,14 +35,30 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_PREFIX: str = "/api/v1"
 
-    # --- OmniVoice Engine ---
+    # --- OmniVoice Engine (instalación externa) ---
+    OMNIVOICE_INSTALL_DIR: Path = Field(
+        default_factory=default_install_dir,
+        description="Directorio de la instalación externa de OmniVoice",
+    )
+    OMNIVOICE_VENV_DIR: Path = Field(
+        default_factory=default_venv_dir,
+        description="Directorio del venv externo que contiene OmniVoice + CUDA",
+    )
+    OMNIVOICE_PYTHON_BIN: Path = Field(
+        default=None,  # type: ignore[assignment]
+        description="Ruta al python.exe del venv externo (derivada)",
+    )
+    OMNIVOICE_CLI_ENTRY: str = Field(
+        default="omnivoice_cli.__main__",
+        description="Módulo CLI ejecutable dentro del venv externo",
+    )
     OMNIVOICE_MODEL_PATH: Path = Field(
-        default=Path("models/omnivoice"),
-        description="Ruta al directorio del modelo OmniVoice (k2-fsa)",
+        default=None,  # type: ignore[assignment]
+        description="Ruta al modelo (por defecto, dentro de OMNIVOICE_INSTALL_DIR)",
     )
     OMNIVOICE_DEVICE: str = Field(
         default="cuda:0",
-        description="Dispositivo para inferencia (cuda:0, cpu, etc.)",
+        description="Dispositivo de inferencia (lo gestiona el venv externo)",
     )
     OMNIVOICE_LANGUAGES: list[str] = Field(
         default=["es", "en", "zh", "ja", "ko", "fr", "de"],
@@ -43,6 +71,14 @@ class Settings(BaseSettings):
     ENGINE_CONCURRENCY: int = Field(
         default=1,
         description="Número máximo de síntesis simultáneas (P2000 = 1)",
+    )
+    ENGINE_STARTUP_TIMEOUT_SEC: int = Field(
+        default=30,
+        description="Timeout para el arranque del subprocess del engine",
+    )
+    ENGINE_REQUEST_TIMEOUT_SEC: int = Field(
+        default=120,
+        description="Timeout por petición al engine",
     )
 
     # --- Storage ---
@@ -97,13 +133,26 @@ class Settings(BaseSettings):
         description="Formato de logs: json o console",
     )
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Asegurar que los directorios existan
+    def model_post_init(self, __context: object) -> None:
+        """Deriva rutas y crea directorios locales."""
+        # Derivar python bin del venv externo
+        if self.OMNIVOICE_PYTHON_BIN is None:
+            object.__setattr__(
+                self,
+                "OMNIVOICE_PYTHON_BIN",
+                python_bin_from_venv(self.OMNIVOICE_VENV_DIR),
+            )
+        # Derivar ruta del modelo si no se ha definido
+        if self.OMNIVOICE_MODEL_PATH is None:
+            object.__setattr__(
+                self,
+                "OMNIVOICE_MODEL_PATH",
+                self.OMNIVOICE_INSTALL_DIR / "models",
+            )
+        # Crear directorios locales
         self.VOICES_DIR.mkdir(parents=True, exist_ok=True)
         self.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self.OMNIVOICE_MODEL_PATH.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache
@@ -113,3 +162,4 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
