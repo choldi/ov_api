@@ -9,7 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from omnivoice_api.core.engine_paths import (
@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     OMNIVOICE_INSTALL_DIR: Path = Field(
         default_factory=default_install_dir,
         description="Directorio de la instalación externa de OmniVoice",
+    )
+    # Alias aceptado por scripts externos (ej. check-omnivoice-install).
+    # Se sincroniza con OMNIVOICE_INSTALL_DIR en model_post_init.
+    OMNIVOICE_PATH: Path | None = Field(
+        default=None,
+        description="Alias de OMNIVOICE_INSTALL_DIR (compatibilidad con scripts)",
     )
     OMNIVOICE_VENV_DIR: Path = Field(
         default_factory=default_venv_dir,
@@ -135,6 +141,11 @@ class Settings(BaseSettings):
 
     def model_post_init(self, __context: object) -> None:
         """Deriva rutas y crea directorios locales."""
+        # Sincronizar OMNIVOICE_PATH con OMNIVOICE_INSTALL_DIR si no se
+        # proporcionó explícitamente. Esto permite que scripts externos
+        # (ej. check-omnivoice-install) lean OMNIVOICE_PATH desde .env.
+        if self.OMNIVOICE_PATH is None:
+            object.__setattr__(self, "OMNIVOICE_PATH", self.OMNIVOICE_INSTALL_DIR)
         # Derivar python bin del venv externo
         if self.OMNIVOICE_PYTHON_BIN is None:
             object.__setattr__(
@@ -162,4 +173,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
