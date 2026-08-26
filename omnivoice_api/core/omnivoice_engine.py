@@ -11,6 +11,12 @@ from typing import Protocol, Any
 import torch
 
 from omnivoice_api.settings import get_settings
+from omnivoice_api.core.exceptions import (
+    EngineUnavailableError,
+    UnsupportedEmotionError,
+    UnsupportedLanguageError,
+    VoiceNotFoundError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +112,7 @@ class OmniVoiceEngine:
             logger.info("Modelo OmniVoice cargado correctamente")
         except Exception as e:
             logger.exception("Error cargando modelo OmniVoice")
-            raise RuntimeError(f"Failed to load OmniVoice model: {e}") from e
+            raise EngineUnavailableError(f"Failed to load OmniVoice model: {e}") from e
 
     def _get_mock_stock_voices(self) -> list[dict]:
         """Voces stock mock para desarrollo/tests."""
@@ -159,17 +165,14 @@ class OmniVoiceEngine:
         # Validar voz
         voice = next((v for v in self._stock_voices if v["voice_id"] == voice_id), None)
         if not voice:
-            from omnivoice_api.core.exceptions import VoiceNotFoundError
             raise VoiceNotFoundError(voice_id, "stock")
 
         # Validar idioma
         if language not in self._languages:
-            from omnivoice_api.core.exceptions import UnsupportedLanguageError
             raise UnsupportedLanguageError(language, self._languages)
 
         # Validar emoción
         if emotion and emotion not in self._emotions:
-            from omnivoice_api.core.exceptions import UnsupportedEmotionError
             raise UnsupportedEmotionError(emotion, self._emotions)
 
         async with self._semaphore:
