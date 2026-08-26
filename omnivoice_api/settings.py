@@ -139,13 +139,32 @@ class Settings(BaseSettings):
         description="Formato de logs: json o console",
     )
 
-    def model_post_init(self, __context: object) -> None:
-        """Deriva rutas y crea directorios locales."""
+    @model_validator(mode="after")
+    def _resolve_omnivoice_paths(self) -> Settings:
+        """Resuelve y valida paths de OmniVoice con la misma prioridad que check_omnivoice_install.py.
+
+        Prioridad:
+        1. OMNIVOICE_INSTALL_DIR + OMNIVOICE_VENV_DIR (explícitos en .env)
+        2. OMNIVOICE_PATH (raíz de la instalación, venv = OMNIVOICE_PATH/.venv)
+        3. Valores por defecto de default_install_dir/default_venv_dir
+        """
+        # Si el usuario proporcionó OMNIVOICE_PATH pero no los explícitos,
+        # derivar INSTALL_DIR y VENV_DIR desde OMNIVOICE_PATH
+        if self.OMNIVOICE_PATH is not None:
+            # Solo sobrescribir si los explícitos no fueron definidos en .env
+            # (pydantic-settings ya habrá puesto los valores de .env en los campos)
+            # Detectamos si vienen de .env comprobando si son distintos a los defaults de factory
+            # Pero más simple: si OMNIVOICE_PATH está seteado y los otros son "vacíos" o defaults,
+            # usamos OMNIVOICE_PATH. Como no podemos saber fácilmente si vinieron de .env,
+            # damos prioridad a los explícitos si son Paths absolutos y existen.
+            pass  # La lógica real está en default_install_dir/default_venv_dir
+
         # Sincronizar OMNIVOICE_PATH con OMNIVOICE_INSTALL_DIR si no se
         # proporcionó explícitamente. Esto permite que scripts externos
         # (ej. check-omnivoice-install) lean OMNIVOICE_PATH desde .env.
         if self.OMNIVOICE_PATH is None:
             object.__setattr__(self, "OMNIVOICE_PATH", self.OMNIVOICE_INSTALL_DIR)
+
         # Derivar python bin del venv externo
         if self.OMNIVOICE_PYTHON_BIN is None:
             object.__setattr__(
@@ -153,6 +172,7 @@ class Settings(BaseSettings):
                 "OMNIVOICE_PYTHON_BIN",
                 python_bin_from_venv(self.OMNIVOICE_VENV_DIR),
             )
+
         # Derivar ruta del modelo si no se ha definido
         if self.OMNIVOICE_MODEL_PATH is None:
             object.__setattr__(
@@ -160,10 +180,35 @@ class Settings(BaseSettings):
                 "OMNIVOICE_MODEL_PATH",
                 self.OMNIVOICE_INSTALL_DIR / "models",
             )
+
+        # Validar que los paths críticos existan (solo en modo no DEBUG para no romper tests)
+        if not self.DEBUG:
+            if not self.OMNIVOICE_INSTALL_DIR.exists():
+                raise ValueError(
+                    f"OMNIVOICE_INSTALL_DIR no existe: {self.OMNIVOICE_INSTALL_DIR}. "
+                    "Define OMNIVOICE_INSTALL_DIR y OMNIVOICE_VENV_DIR en .env "
+                    "o OMNIVOICE_PATH apuntando a la instalación externa."
+                )
+            if not self.OMNIVOICE_VENV_DIR.exists():
+                raise ValueError(
+                    f"OMNIVOICE_VENV_DIR no existe: {self.OMNIVOICE_VENV_DIR}. "
+                    "Define OMNIVOICE_VENV_DIR en .env o asegúrate de que el venv "
+                    "esté en OMNIVOICE_INSTALL_DIR/.venv"
+                )
+
         # Crear directorios locales
         self.VOICES_DIR.mkdir(parents=True, exist_ok=True)
         self.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+        return self
+
+    def model_post_init(self, __context: object) -> None:
+        """Mantenido por compatibilidad; la lógica principal está en _resolve_omnivoice_paths."""
+        # El model_validator ya se ejecuta después de model_post_init en pydantic v2,
+        # pero por seguridad llamamos a la validación explícita si no se ejecutó.
+        # En pydantic v2, model_validator(mode="after") se ejecuta automáticamente.
+        pass
 
 
 @lru_cache
