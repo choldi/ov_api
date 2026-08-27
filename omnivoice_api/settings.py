@@ -25,143 +25,147 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        env_prefix="OMNIVOICE_",
         case_sensitive=False,
         extra="ignore",
     )
 
     # --- App ---
-    APP_NAME: str = "OmniVoice API"
-    APP_VERSION: str = "0.1.0"
-    DEBUG: bool = False
-    API_PREFIX: str = "/api/v1"
+    APP_NAME: str = Field(default="OmniVoice API", validation_alias="APP_NAME")
+    APP_VERSION: str = Field(default="0.1.0", validation_alias="APP_VERSION")
+    DEBUG: bool = Field(default=False, validation_alias="DEBUG")
+    API_PREFIX: str = Field(default="/api/v1", validation_alias="API_PREFIX")
 
     # --- OmniVoice Engine (instalación externa) ---
     OMNIVOICE_INSTALL_DIR: Path = Field(
         default_factory=default_install_dir,
         description="Directorio de la instalación externa de OmniVoice",
+        validation_alias="INSTALL_DIR",
     )
     # Alias aceptado por scripts externos (ej. check-omnivoice-install).
-    # Se sincroniza con OMNIVOICE_INSTALL_DIR en model_post_init.
     OMNIVOICE_PATH: Path | None = Field(
         default=None,
-        description="Alias de OMNIVOICE_INSTALL_DIR (compatibilidad con scripts)",
+        description="Alias de INSTALL_DIR (compatibilidad con scripts)",
+        validation_alias="PATH",
     )
     OMNIVOICE_VENV_DIR: Path = Field(
         default_factory=default_venv_dir,
         description="Directorio del venv externo que contiene OmniVoice + CUDA",
+        validation_alias="VENV_DIR",
     )
     OMNIVOICE_PYTHON_BIN: Path = Field(
         default=None,  # type: ignore[assignment]
         description="Ruta al python.exe del venv externo (derivada)",
+        validation_alias="PYTHON_BIN",
     )
     OMNIVOICE_CLI_ENTRY: str = Field(
         default="omnivoice_cli.__main__",
         description="Módulo CLI ejecutable dentro del venv externo",
+        validation_alias="CLI_ENTRY",
     )
     OMNIVOICE_MODEL_PATH: Path = Field(
         default=None,  # type: ignore[assignment]
-        description="Ruta al modelo (por defecto, dentro de OMNIVOICE_INSTALL_DIR)",
+        description="Ruta al modelo (por defecto, dentro de INSTALL_DIR)",
+        validation_alias="MODEL_PATH",
     )
     OMNIVOICE_DEVICE: str = Field(
         default="cuda:0",
         description="Dispositivo de inferencia (lo gestiona el venv externo)",
+        validation_alias="DEVICE",
     )
     OMNIVOICE_LANGUAGES: list[str] = Field(
         default=["es", "en", "zh", "ja", "ko", "fr", "de"],
         description="Lista de códigos de idioma ISO 639-1 soportados",
+        validation_alias="LANGUAGES",
     )
     MAX_REFERENCE_DURATION_SEC: int = Field(
         default=30,
         description="Duración máxima permitida para audio de referencia (segundos)",
+        validation_alias="MAX_REFERENCE_DURATION_SEC",
     )
     ENGINE_CONCURRENCY: int = Field(
         default=1,
         description="Número máximo de síntesis simultáneas (P2000 = 1)",
+        validation_alias="ENGINE_CONCURRENCY",
     )
     ENGINE_STARTUP_TIMEOUT_SEC: int = Field(
         default=30,
         description="Timeout para el arranque del subprocess del engine",
+        validation_alias="ENGINE_STARTUP_TIMEOUT_SEC",
     )
     ENGINE_REQUEST_TIMEOUT_SEC: int = Field(
         default=120,
         description="Timeout por petición al engine",
+        validation_alias="ENGINE_REQUEST_TIMEOUT_SEC",
     )
 
     # --- Storage ---
     STORAGE_BASE_PATH: Path = Field(
         default=Path("storage"),
         description="Directorio base para almacenamiento",
+        validation_alias="STORAGE_BASE_PATH",
     )
     VOICES_DIR: Path = Field(
         default=Path("storage/voices"),
         description="Directorio para voces clonadas",
+        validation_alias="VOICES_DIR",
     )
     OUTPUTS_DIR: Path = Field(
         default=Path("storage/outputs"),
         description="Directorio para outputs temporales",
+        validation_alias="OUTPUTS_DIR",
     )
     CACHE_DIR: Path = Field(
         default=Path("storage/cache"),
         description="Directorio para caché de embeddings",
+        validation_alias="CACHE_DIR",
     )
     OUTPUT_TTL_SECONDS: int = Field(
         default=3600,
         description="TTL para archivos de output temporales (segundos)",
+        validation_alias="OUTPUT_TTL_SECONDS",
     )
 
     # --- Database ---
     DATABASE_URL: str = Field(
         default="sqlite:///storage/omnivoice.db",
         description="URL de conexión a la base de datos",
+        validation_alias="DATABASE_URL",
     )
 
     # --- Security ---
     API_KEY: str | None = Field(
         default=None,
         description="API Key opcional para proteger endpoints (None = desactivado)",
+        validation_alias="API_KEY",
     )
     CORS_ORIGINS: list[str] = Field(
         default=["*"],
         description="Orígenes permitidos para CORS",
+        validation_alias="CORS_ORIGINS",
     )
     MAX_UPLOAD_SIZE_MB: int = Field(
         default=10,
         description="Tamaño máximo de upload en MB",
+        validation_alias="MAX_UPLOAD_SIZE_MB",
     )
 
     # --- Observability ---
     LOG_LEVEL: str = Field(
         default="INFO",
         description="Nivel de logging (DEBUG, INFO, WARNING, ERROR)",
+        validation_alias="LOG_LEVEL",
     )
     LOG_FORMAT: str = Field(
         default="json",
         description="Formato de logs: json o console",
+        validation_alias="LOG_FORMAT",
     )
 
     @model_validator(mode="after")
-    def _resolve_omnivoice_paths(self) -> Settings:
-        """Resuelve y valida paths de OmniVoice con la misma prioridad que check_omnivoice_install.py.
-
-        Prioridad:
-        1. OMNIVOICE_INSTALL_DIR + OMNIVOICE_VENV_DIR (explícitos en .env)
-        2. OMNIVOICE_PATH (raíz de la instalación, venv = OMNIVOICE_PATH/.venv)
-        3. Valores por defecto de default_install_dir/default_venv_dir
-        """
-        # Si el usuario proporcionó OMNIVOICE_PATH pero no los explícitos,
-        # derivar INSTALL_DIR y VENV_DIR desde OMNIVOICE_PATH
-        if self.OMNIVOICE_PATH is not None:
-            # Solo sobrescribir si los explícitos no fueron definidos en .env
-            # (pydantic-settings ya habrá puesto los valores de .env en los campos)
-            # Detectamos si vienen de .env comprobando si son distintos a los defaults de factory
-            # Pero más simple: si OMNIVOICE_PATH está seteado y los otros son "vacíos" o defaults,
-            # usamos OMNIVOICE_PATH. Como no podemos saber fácilmente si vinieron de .env,
-            # damos prioridad a los explícitos si son Paths absolutos y existen.
-            pass  # La lógica real está en default_install_dir/default_venv_dir
-
-        # Sincronizar OMNIVOICE_PATH con OMNIVOICE_INSTALL_DIR si no se
-        # proporcionó explícitamente. Esto permite que scripts externos
-        # (ej. check-omnivoice-install) lean OMNIVOICE_PATH desde .env.
+    def _resolve_paths(self) -> Settings:
+        """Resuelve paths derivados y valida existencia solo en producción."""
+        # Sincronizar OMNIVOICE_PATH con INSTALL_DIR si no se proporcionó explícitamente
         if self.OMNIVOICE_PATH is None:
             object.__setattr__(self, "OMNIVOICE_PATH", self.OMNIVOICE_INSTALL_DIR)
 
@@ -181,7 +185,7 @@ class Settings(BaseSettings):
                 self.OMNIVOICE_INSTALL_DIR / "models",
             )
 
-        # Validar que los paths críticos existan (solo en modo no DEBUG para no romper tests)
+        # Validar paths críticos solo si no es DEBUG (para no romper tests)
         if not self.DEBUG:
             if not self.OMNIVOICE_INSTALL_DIR.exists():
                 raise ValueError(
@@ -202,13 +206,6 @@ class Settings(BaseSettings):
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
         return self
-
-    def model_post_init(self, __context: object) -> None:
-        """Mantenido por compatibilidad; la lógica principal está en _resolve_omnivoice_paths."""
-        # El model_validator ya se ejecuta después de model_post_init en pydantic v2,
-        # pero por seguridad llamamos a la validación explícita si no se ejecutó.
-        # En pydantic v2, model_validator(mode="after") se ejecuta automáticamente.
-        pass
 
 
 @lru_cache
