@@ -7,6 +7,8 @@ una instalación externa (ver ``docs/INSTALLATION.md``).
 from __future__ import annotations
 
 import json
+import os
+import warnings
 from functools import lru_cache
 from pathlib import Path
 
@@ -20,15 +22,58 @@ from omnivoice_api.core.engine_paths import (
 )
 
 
+def _resolve_env_file() -> tuple[str | None, str | None]:
+    """
+    Resuelve qué archivo .env usar.
+
+    Returns:
+        Tupla (env_file_path, warning_message).
+        - env_file_path: ruta al archivo a usar (None si no existe ninguno)
+        - warning_message: mensaje de advertencia si ambos existen, None en caso contrario
+    """
+    cwd = Path.cwd()
+    dot_env = cwd / ".env"
+    env_file = cwd / "env"
+
+    dot_exists = dot_env.exists()
+    env_exists = env_file.exists()
+
+    if dot_exists and env_exists:
+        # Prioridad a .env, pero avisar
+        warning = (
+            f"Se detectaron ambos archivos: {dot_env} y {env_file}. "
+            f"Se usará {dot_env} (prioridad .env sobre env)."
+        )
+        return str(dot_env), warning
+    elif dot_exists:
+        return str(dot_env), None
+    elif env_exists:
+        return str(env_file), None
+    else:
+        # No existe ninguno, pydantic-settings usará el default (.env) pero no fallará
+        return ".env", None
+
+
+# Resolver el archivo de entorno al importar el módulo
+_ENV_FILE_PATH, _ENV_WARNING = _resolve_env_file()
+
+
 class Settings(BaseSettings):
     """Configuración global de OmniVoice API."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE_PATH,
         env_file_encoding="utf-8",
         env_prefix="OMNIVOICE_",
         case_sensitive=False,
         extra="ignore",
+    )
+
+    # Campo para exponer qué archivo .env se está usando
+    ENV_FILE_USED: str = Field(
+        default=_ENV_FILE_PATH or "none",
+        description="Ruta del archivo .env utilizado para la configuración",
+        validation_alias="ENV_FILE_USED",
     )
 
     # --- App ---
@@ -166,6 +211,16 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _resolve_paths(self) -> Settings:
         """Resuelve paths derivados y valida existencia solo en producción."""
+        # Mostrar advertencia si ambos archivos .env y env existen
+        if _ENV_WARNING:
+            warnings.warn(_ENV_WARNING, UserWarning, stacklevel=2)
+            # También imprimir a stderr para visibilidad inmediata en consola
+            print(f"[CONFIG WARNING] {_ENV_WARNING}", file=os.sys.stderr)
+
+        # Log del archivo .env usado (solo en DEBUG)
+        if self.DEBUG:
+            print(f"[CONFIG] Usando archivo de entorno: {self.ENV_FILE_USED}", file=os.sys.stderr)
+
         # Sincronizar OMNIVOICE_PATH con INSTALL_DIR si no se proporcionó explícitamente
         if self.OMNIVOICE_PATH is None:
             object.__setattr__(self, "OMNIVOICE_PATH", self.OMNIVOICE_INSTALL_DIR)
