@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from typing import Literal
 from pathlib import Path
+import os
 
 
 class Settings(BaseSettings):
