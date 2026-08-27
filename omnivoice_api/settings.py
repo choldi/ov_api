@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # --- App ---
     APP_NAME: str = Field(default="OmniVoice API", validation_alias="APP_NAME")
     APP_VERSION: str = Field(default="0.1.0", validation_alias="APP_VERSION")
-    DEBUG: bool = Field(default=False, validation_alias="DEBUG")
+    DEBUG: bool = Field(default=True, validation_alias="DEBUG")  # True para desarrollo
     API_PREFIX: str = Field(default="/api/v1", validation_alias="API_PREFIX")
 
     # --- OmniVoice Engine (instalación externa) ---
@@ -186,13 +186,16 @@ class Settings(BaseSettings):
                 self.OMNIVOICE_INSTALL_DIR / "models",
             )
 
-        # Validar paths críticos solo si no es DEBUG (para no romper tests)
+        # Validar paths críticos SOLO en producción (DEBUG=False)
+        # En desarrollo (DEBUG=True) permitimos arrancar sin instalación externa
+        # para facilitar tests y desarrollo con engine mockeado.
         if not self.DEBUG:
             if not self.OMNIVOICE_INSTALL_DIR.exists():
                 raise ValueError(
                     f"OMNIVOICE_INSTALL_DIR no existe: {self.OMNIVOICE_INSTALL_DIR}. "
                     "Define OMNIVOICE_INSTALL_DIR y OMNIVOICE_VENV_DIR en .env "
-                    "o OMNIVOICE_PATH apuntando a la instalación externa."
+                    "o OMNIVOICE_PATH apuntando a la instalación externa de OmniVoice. "
+                    "Ver docs/INSTALLATION.md"
                 )
             if not self.OMNIVOICE_VENV_DIR.exists():
                 raise ValueError(
@@ -201,7 +204,7 @@ class Settings(BaseSettings):
                     "esté en OMNIVOICE_INSTALL_DIR/.venv"
                 )
 
-        # Crear directorios locales
+        # Crear directorios locales (siempre, tanto en dev como prod)
         self.VOICES_DIR.mkdir(parents=True, exist_ok=True)
         self.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
