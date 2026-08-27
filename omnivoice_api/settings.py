@@ -54,8 +54,8 @@ class Settings(BaseSettings):
         description="Directorio del venv externo que contiene OmniVoice + CUDA",
         validation_alias="VENV_DIR",
     )
-    OMNIVOICE_PYTHON_BIN: Path = Field(
-        default=None,  # type: ignore[assignment]
+    OMNIVOICE_PYTHON_BIN: Path | None = Field(
+        default=None,
         description="Ruta al python.exe del venv externo (derivada)",
         validation_alias="PYTHON_BIN",
     )
@@ -64,8 +64,8 @@ class Settings(BaseSettings):
         description="Módulo CLI ejecutable dentro del venv externo",
         validation_alias="CLI_ENTRY",
     )
-    OMNIVOICE_MODEL_PATH: Path = Field(
-        default=None,  # type: ignore[assignment]
+    OMNIVOICE_MODEL_PATH: Path | None = Field(
+        default=None,
         description="Ruta al modelo (por defecto, dentro de INSTALL_DIR)",
         validation_alias="MODEL_PATH",
     )
