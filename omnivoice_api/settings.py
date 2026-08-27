@@ -6,6 +6,7 @@ una instalación externa (ver ``docs/INSTALLATION.md``).
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
 
@@ -139,7 +140,7 @@ class Settings(BaseSettings):
         description="API Key opcional para proteger endpoints (None = desactivado)",
         validation_alias="API_KEY",
     )
-    CORS_ORIGINS: list[str] = Field(
+    CORS_ORIGINS: str | list[str] = Field(
         default=["*"],
         description="Orígenes permitidos para CORS",
         validation_alias="CORS_ORIGINS",
@@ -204,6 +205,32 @@ class Settings(BaseSettings):
         self.VOICES_DIR.mkdir(parents=True, exist_ok=True)
         self.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Convertir CORS_ORIGINS si es una cadena
+        if isinstance(self.CORS_ORIGINS, str):
+            s = self.CORS_ORIGINS.strip()
+            if s == "":
+                cors_origins = []
+            elif s == "*":
+                cors_origins = ["*"]
+            else:
+                # Intentar parsear como JSON
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        # Validar que todos los elementos sean strings
+                        if all(isinstance(item, str) for item in parsed):
+                            cors_origins = parsed
+                        else:
+                            # Volver a dividir por comas si no es una lista de strings
+                            cors_origins = [part.strip() for part in s.split(",")]
+                    else:
+                        # Si no es una lista, dividir por comas
+                        cors_origins = [part.strip() for part in s.split(",")]
+                except json.JSONDecodeError:
+                    # No es JSON válido, dividir por comas
+                    cors_origins = [part.strip() for part in s.split(",")]
+            object.__setattr__(self, "CORS_ORIGINS", cors_origins)
 
         return self
 
