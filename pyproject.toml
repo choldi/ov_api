@@ -48,6 +48,9 @@ dependencies = [
     # Seguridad / DX
     "slowapi>=0.1.9",
     "httpx>=0.27.0",
+    # GPU / Health check (necesario para torch.cuda.is_available() en health_check)
+    # Compatible con NVIDIA P2000 (Pascal, CC 6.1) - requiere CUDA 11.8+ o 12.1+
+    "torch>=2.3.0,<2.5.0",
 ]
 
 [project.optional-dependencies]
@@ -90,7 +93,7 @@ line-ending = "lf"
 
 [tool.ruff.lint.isort]
 known-first-party = ["omnivoice_api"]
-known-third-party = ["fastapi", "pydantic", "sqlalchemy", "pytest", "httpx"]
+known-third-party = ["fastapi", "pydantic", "sqlalchemy", "pytest", "httpx", "torch"]
 profile = "black"
 
 [tool.mypy]
@@ -149,4 +152,3 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
-
