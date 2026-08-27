@@ -221,8 +221,8 @@ class Settings(BaseSettings):
             print(f"[CONFIG WARNING] {_ENV_WARNING}", file=os.sys.stderr)
 
         # Log del archivo .env usado
-        print(f"[CONFIG] Usando archivo de entorno: {self.ENV_FILE_USED}", file=os.sys.stderr)
-        print(f"[CONFIG] DEBUG={self.DEBUG}", file=os.sys.stderr)
+        print(f"[CONFIG] Archivo de entorno detectado: {self.ENV_FILE_USED}", file=os.sys.stderr)
+        print(f"[CONFIG] DEBUG={self.DEBUG} → Validaciones externas: ACTIVADAS (siempre)", file=os.sys.stderr)
 
         # Sincronizar OMNIVOICE_PATH con INSTALL_DIR si no se proporcionó explícitamente
         if self.OMNIVOICE_PATH is None:
