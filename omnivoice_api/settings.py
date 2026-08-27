@@ -79,7 +79,10 @@ class Settings(BaseSettings):
     # --- App ---
     APP_NAME: str = Field(default="OmniVoice API", validation_alias="APP_NAME")
     APP_VERSION: str = Field(default="0.1.0", validation_alias="APP_VERSION")
-    DEBUG: bool = Field(default=True, validation_alias="DEBUG")  # True para desarrollo
+    DEBUG: bool = Field(
+        default=True,
+        description="Modo desarrollo (True) o producción (False)",
+    )
     API_PREFIX: str = Field(default="/api/v1", validation_alias="API_PREFIX")
 
     # --- OmniVoice Engine (instalación externa) ---
@@ -220,6 +223,7 @@ class Settings(BaseSettings):
         # Log del archivo .env usado (solo en DEBUG)
         if self.DEBUG:
             print(f"[CONFIG] Usando archivo de entorno: {self.ENV_FILE_USED}", file=os.sys.stderr)
+            print(f"[CONFIG] DEBUG=True - Modo desarrollo activado", file=os.sys.stderr)
 
         # Sincronizar OMNIVOICE_PATH con INSTALL_DIR si no se proporcionó explícitamente
         if self.OMNIVOICE_PATH is None:
@@ -244,7 +248,8 @@ class Settings(BaseSettings):
         # Validar paths críticos SOLO en producción (DEBUG=False)
         # En desarrollo (DEBUG=True) permitimos arrancar sin instalación externa
         # para facilitar tests y desarrollo con engine mockeado.
-        if not self.DEBUG:
+        if self.DEBUG is not True:
+            print(f"[CONFIG] DEBUG=False - Validando instalación externa en: {self.OMNIVOICE_INSTALL_DIR}", file=os.sys.stderr)
             if not self.OMNIVOICE_INSTALL_DIR.exists():
                 raise ValueError(
                     f"OMNIVOICE_INSTALL_DIR no existe: {self.OMNIVOICE_INSTALL_DIR}. "
@@ -258,6 +263,8 @@ class Settings(BaseSettings):
                     "Define OMNIVOICE_VENV_DIR en .env o asegúrate de que el venv "
                     "esté en OMNIVOICE_INSTALL_DIR/.venv"
                 )
+        else:
+            print(f"[CONFIG] DEBUG=True - Saltando validación de instalación externa", file=os.sys.stderr)
 
         # Crear directorios locales (siempre, tanto en dev como prod)
         self.VOICES_DIR.mkdir(parents=True, exist_ok=True)
