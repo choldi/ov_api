@@ -8,8 +8,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Protocol, Any
 
-import torch
-
 from omnivoice_api.settings import get_settings
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
@@ -216,7 +214,16 @@ class OmniVoiceEngine:
 
     async def health_check(self) -> dict:
         """Comprueba estado del motor."""
-        gpu_available = torch.cuda.is_available()
+        # Importación perezosa: torch solo se necesita si se quiere
+        # comprobar disponibilidad de GPU. El proyecto NO depende de torch
+        # (OmniVoice se consume desde una instalación externa).
+        try:
+            import torch  # type: ignore[import-not-found]
+
+            gpu_available = torch.cuda.is_available()
+        except ImportError:
+            gpu_available = False
+
         return {
             "model_loaded": self._model is not None,
             "gpu_available": gpu_available,
