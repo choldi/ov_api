@@ -213,17 +213,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_paths(self) -> Settings:
-        """Resuelve paths derivados y valida existencia solo en producción."""
+        """Resuelve paths derivados y valida existencia de instalación externa."""
         # Mostrar advertencia si ambos archivos .env y env existen
         if _ENV_WARNING:
             warnings.warn(_ENV_WARNING, UserWarning, stacklevel=2)
             # También imprimir a stderr para visibilidad inmediata en consola
             print(f"[CONFIG WARNING] {_ENV_WARNING}", file=os.sys.stderr)
 
-        # Log del archivo .env usado (solo en DEBUG)
-        if self.DEBUG:
-            print(f"[CONFIG] Usando archivo de entorno: {self.ENV_FILE_USED}", file=os.sys.stderr)
-            print(f"[CONFIG] DEBUG=True - Modo desarrollo activado", file=os.sys.stderr)
+        # Log del archivo .env usado
+        print(f"[CONFIG] Usando archivo de entorno: {self.ENV_FILE_USED}", file=os.sys.stderr)
+        print(f"[CONFIG] DEBUG={self.DEBUG}", file=os.sys.stderr)
 
         # Sincronizar OMNIVOICE_PATH con INSTALL_DIR si no se proporcionó explícitamente
         if self.OMNIVOICE_PATH is None:
@@ -245,26 +244,22 @@ class Settings(BaseSettings):
                 self.OMNIVOICE_INSTALL_DIR / "models",
             )
 
-        # Validar paths críticos SOLO en producción (DEBUG=False)
-        # En desarrollo (DEBUG=True) permitimos arrancar sin instalación externa
-        # para facilitar tests y desarrollo con engine mockeado.
-        if self.DEBUG is not True:
-            print(f"[CONFIG] DEBUG=False - Validando instalación externa en: {self.OMNIVOICE_INSTALL_DIR}", file=os.sys.stderr)
-            if not self.OMNIVOICE_INSTALL_DIR.exists():
-                raise ValueError(
-                    f"OMNIVOICE_INSTALL_DIR no existe: {self.OMNIVOICE_INSTALL_DIR}. "
-                    "Define OMNIVOICE_INSTALL_DIR y OMNIVOICE_VENV_DIR en .env "
-                    "o OMNIVOICE_PATH apuntando a la instalación externa de OmniVoice. "
-                    "Ver docs/INSTALLATION.md"
-                )
-            if not self.OMNIVOICE_VENV_DIR.exists():
-                raise ValueError(
-                    f"OMNIVOICE_VENV_DIR no existe: {self.OMNIVOICE_VENV_DIR}. "
-                    "Define OMNIVOICE_VENV_DIR en .env o asegúrate de que el venv "
-                    "esté en OMNIVOICE_INSTALL_DIR/.venv"
-                )
-        else:
-            print(f"[CONFIG] DEBUG=True - Saltando validación de instalación externa", file=os.sys.stderr)
+        # Validar paths críticos SIEMPRE (tanto en DEBUG como en producción)
+        # Esto permite detectar problemas de configuración temprano
+        print(f"[CONFIG] Validando instalación externa en: {self.OMNIVOICE_INSTALL_DIR}", file=os.sys.stderr)
+        if not self.OMNIVOICE_INSTALL_DIR.exists():
+            raise ValueError(
+                f"OMNIVOICE_INSTALL_DIR no existe: {self.OMNIVOICE_INSTALL_DIR}. "
+                "Define OMNIVOICE_INSTALL_DIR y OMNIVOICE_VENV_DIR en .env "
+                "o OMNIVOICE_PATH apuntando a la instalación externa de OmniVoice. "
+                "Ver docs/INSTALLATION.md"
+            )
+        if not self.OMNIVOICE_VENV_DIR.exists():
+            raise ValueError(
+                f"OMNIVOICE_VENV_DIR no existe: {self.OMNIVOICE_VENV_DIR}. "
+                "Define OMNIVOICE_VENV_DIR en .env o asegúrate de que el venv "
+                "esté en OMNIVOICE_INSTALL_DIR/.venv"
+            )
 
         # Crear directorios locales (siempre, tanto en dev como prod)
         self.VOICES_DIR.mkdir(parents=True, exist_ok=True)
@@ -297,7 +292,41 @@ class Settings(BaseSettings):
                     cors_origins = [part.strip() for part in s.split(",")]
             object.__setattr__(self, "CORS_ORIGINS", cors_origins)
 
+        # Mostrar configuración resuelta (sin secrets)
+        self._log_resolved_config()
         return self
+
+    def _log_resolved_config(self) -> None:
+        """Log de la configuración resuelta para debugging (sin secrets)."""
+        print("[CONFIG] === Configuración resuelta ===", file=os.sys.stderr)
+        print(f"[CONFIG] APP_NAME: {self.APP_NAME}", file=os.sys.stderr)
+        print(f"[CONFIG] APP_VERSION: {self.APP_VERSION}", file=os.sys.stderr)
+        print(f"[CONFIG] DEBUG: {self.DEBUG}", file=os.sys.stderr)
+        print(f"[CONFIG] API_PREFIX: {self.API_PREFIX}", file=os.sys.stderr)
+        print(f"[CONFIG] OMNIVOICE_INSTALL_DIR: {self.OMNIVOICE_INSTALL_DIR}", file=os.sys.stderr)
+        print(f"[CONFIG] OMNIVOICE_PATH: {self.OMNIVOICE_PATH}", file=os.sys.stderr)
+        print(f"[CONFIG] OMNIVOICE_VENV_DIR: {self.OMNIVOICE_VENV_DIR}", file=os.sys.stderr)
+        print(f"[CONFIG] OMNIVOICE_PYTHON_BIN: {self.OMNIVOICE_PYTHON_BIN}", file=os.sys.stderr)
+        print(f"[CONFIG] OMNIVOICE_CLI_ENTRY: {self.OMNIVOICE_CLI_ENTRY}", file=os.sys.stderr)
+        print(f"[CONFIG] OMNIVOICE_MODEL_PATH: {self.OMNIVOICE_MODEL_PATH}", file=os.sys.stderr)
+        print(f"[CONFIG] OMNIVOICE_DEVICE: {self.OMNIVOICE_DEVICE}", file=os.sys.stderr)
+        print(f"[CONFIG] OMNIVOICE_LANGUAGES: {self.OMNIVOICE_LANGUAGES}", file=os.sys.stderr)
+        print(f"[CONFIG] MAX_REFERENCE_DURATION_SEC: {self.MAX_REFERENCE_DURATION_SEC}", file=os.sys.stderr)
+        print(f"[CONFIG] ENGINE_CONCURRENCY: {self.ENGINE_CONCURRENCY}", file=os.sys.stderr)
+        print(f"[CONFIG] ENGINE_STARTUP_TIMEOUT_SEC: {self.ENGINE_STARTUP_TIMEOUT_SEC}", file=os.sys.stderr)
+        print(f"[CONFIG] ENGINE_REQUEST_TIMEOUT_SEC: {self.ENGINE_REQUEST_TIMEOUT_SEC}", file=os.sys.stderr)
+        print(f"[CONFIG] STORAGE_BASE_PATH: {self.STORAGE_BASE_PATH}", file=os.sys.stderr)
+        print(f"[CONFIG] VOICES_DIR: {self.VOICES_DIR}", file=os.sys.stderr)
+        print(f"[CONFIG] OUTPUTS_DIR: {self.OUTPUTS_DIR}", file=os.sys.stderr)
+        print(f"[CONFIG] CACHE_DIR: {self.CACHE_DIR}", file=os.sys.stderr)
+        print(f"[CONFIG] OUTPUT_TTL_SECONDS: {self.OUTPUT_TTL_SECONDS}", file=os.sys.stderr)
+        print(f"[CONFIG] DATABASE_URL: {self.DATABASE_URL}", file=os.sys.stderr)
+        print(f"[CONFIG] API_KEY: {'***' if self.API_KEY else 'None'}", file=os.sys.stderr)
+        print(f"[CONFIG] CORS_ORIGINS: {self.CORS_ORIGINS}", file=os.sys.stderr)
+        print(f"[CONFIG] MAX_UPLOAD_SIZE_MB: {self.MAX_UPLOAD_SIZE_MB}", file=os.sys.stderr)
+        print(f"[CONFIG] LOG_LEVEL: {self.LOG_LEVEL}", file=os.sys.stderr)
+        print(f"[CONFIG] LOG_FORMAT: {self.LOG_FORMAT}", file=os.sys.stderr)
+        print("[CONFIG] ================================", file=os.sys.stderr)
 
 
 @lru_cache
