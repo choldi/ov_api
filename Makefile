@@ -111,8 +111,7 @@ check-gpu: install
 	@$(PYTHON_VENV) -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}'); print(f'GPU count: {torch.cuda.device_count()}'); [print(f'  GPU {i}: {torch.cuda.get_device_name(i)}') for i in range(torch.cuda.device_count())]"
 
 # Verificación de la instalación externa de OmniVoice.
-# Se delega a un script Python externo para evitar problemas de parsing
-# de comillas y caracteres especiales en cmd.exe (Windows).
+# El script Python ya carga .env internamente, no necesitamos source aquí.
 check-omnivoice-install: install
 	@echo "Verificando instalación externa de OmniVoice..."
 	@$(PYTHON_VENV) scripts/check_omnivoice_install.py
