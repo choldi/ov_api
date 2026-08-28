@@ -22,27 +22,31 @@ router = APIRouter(tags=["tts"])
 
 
 async def get_tts_service() -> TtsService:
-    """Dependency para obtener el servicio TTS."""
-    service = TtsService()
-    try:
-        yield service
-    finally:
-        await service.close()
+        """Dependency para obtener el servicio TTS."""
+        engine_client = OmniVoiceEngineClient()
+        voice_service = VoiceService()
+        service = TtsService(engine_client=engine_client, voice_service=voice_service)
+        try:
+            yield service
+        finally:
+            await service.close()
 
 
 @router.post("/tts", responses={200: {"content": {"audio/wav": {}}}}, response_class=Response)
 async def synthesize_tts(
     request: Request,
+    # Parámetros del cuerpo (requeridos)
+    text: Annotated[str, Body(min_length=1, description="Texto a sintetizar")],
+    voice_id: Annotated[str, Body(description="ID de la voz a utilizar")],
+    language: Annotated[str, Body(description="Idioma del texto (ISO 639-1)")],
+    # Parámetros opcionales
+    speed: Annotated[float, Body(ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
+    emotion: Annotated[str | None, Body(description="Emoción a aplicar")] = None,
+    intensity: Annotated[float | None, Body(ge=0.0, le=1.0, description="Intensidad de la emoción")] = None,
+    # Cabeceras opcionales
+    accept: Annotated[str | None, Header(description="Tipo de contenido esperado")] = None,
+    # Dependencias
     tts_service: TtsService = Depends(get_tts_service),
-    # Parámetros del cuerpo
-    text: Annotated[str, Body(..., min_length=1, description="Texto a sintetizar")],
-    voice_id: Annotated[str, Body(..., description="ID de la voz a utilizar")],
-    language: Annotated[str, Body(..., description="Idioma del texto (ISO 639-1)")],
-    speed: Annotated[float, Body(1.0, ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
-    emotion: Annotated[str | None, Body(None, description="Emoción a aplicar")] = None,
-    intensity: Annotated[float | None, Body(None, ge=0.0, le=1.0, description="Intensidad de la emoción")] = None,
-    # Cabeceras opciales
-    accept: Annotated[str | None, Header(None, description="Tipo de contenido esperado")] = None,
 ) -> Response:
     """
     Sintetiza texto a voz.

@@ -45,3 +45,11 @@ class EngineUnavailableError(OmniVoiceAPIError):
     def __init__(self, detail: str = "Motor de síntesis no disponible") -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class InvalidReferenceAudioError(OmniVoiceAPIError):
+    """Se lanza cuando el audio de referencia para clonación de voz es inválido."""
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)

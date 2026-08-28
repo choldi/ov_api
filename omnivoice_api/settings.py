@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     OMNIVOICE_MODEL_PATH: Path | None = None
     OMNIVOICE_CLI_ENTRY: str = "omnivoice_cli.__main__"
     OMNIVOICE_DEVICE: str = "cuda:0"
-    OMNIVOICE_LANGUAGES: list[str] = Field(default_factory=lambda: ["es", "en", "zh", "ja", "ko", "fr", "de"])
+    OMNIVOICE_LANGUAGES: str = "es,en,zh,ja,ko,fr,de"
     MAX_REFERENCE_DURATION_SEC: int = 30
     ENGINE_CONCURRENCY: int = 1
     ENGINE_STARTUP_TIMEOUT_SEC: int = 30
@@ -44,12 +44,22 @@ class Settings(BaseSettings):
 
     # --- Security ---
     API_KEY: str = ""
-    CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
+    CORS_ORIGINS: str = "*"
     MAX_UPLOAD_SIZE_MB: int = 10
 
     # --- Observability ---
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     LOG_FORMAT: Literal["json", "console"] = "json"
+
+    @property
+    def omnilang_list(self) -> list[str]:
+        """Lista de idiomas como lista de strings."""
+        return [lang.strip() for lang in self.OMNIVOICE_LANGUAGES.split(",") if lang.strip()]
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Lista de orígenes CORS como lista de strings."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
     def model_path(self) -> Path:
