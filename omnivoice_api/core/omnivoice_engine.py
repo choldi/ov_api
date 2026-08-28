@@ -96,8 +96,20 @@ class OmniVoiceEngine:
     async def initialize(self) -> None:
         """Inicializa el modelo (carga pesos, warm-up)."""
         if self._model is not None:
+            print(f"[DEBUG] Engine already initialized, _model is not None: {self._model is not None}")
             return
 
+        print(f"[DEBUG] Initializing engine...")
+        self._settings = get_settings()
+        print(f"[DEBUG] Settings INSTALL_DIR: {self._settings.OMNIVOICE_INSTALL_DIR}")
+        print(f"[DEBUG] Settings VENV_DIR: {self._settings.OMNIVOICE_VENV_DIR}")
+        print(f"[DEBUG] Settings MODEL_PATH: {self._settings.OMNIVOICE_MODEL_PATH}")
+        print(f"[DEBUG] Settings model_path property: {self._settings.model_path}")
+        print(f"[DEBUG] Settings python_bin property: {self._settings.python_bin}")
+
+        self._device = self._settings.OMNIVOICE_DEVICE
+        print(f"[DEBUG] Device set to: {self._device}")
+        
         logger.info("Cargando modelo OmniVoice en %s...", self._device)
         try:
             # TODO: Cargar modelo real de OmniVoice (k2-fsa)
@@ -105,11 +117,14 @@ class OmniVoiceEngine:
             # self._stock_voices = await self._load_stock_voices()
 
             # Por ahora, mock para que los tests pasen
+            self._model = object()  # Mock model object
             self._stock_voices = self._get_mock_stock_voices()
             await self.warmup()
             logger.info("Modelo OmniVoice cargado correctamente")
+            print(f"[DEBUG] Engine initialized successfully, _model is not None: {self._model is not None}")
         except Exception as e:
             logger.exception("Error cargando modelo OmniVoice")
+            print(f"[DEBUG] Error initializing engine: {e}")
             raise EngineUnavailableError(f"Failed to load OmniVoice model: {e}") from e
 
     def _get_mock_stock_voices(self) -> list[dict]:

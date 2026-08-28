@@ -1,3 +1,4 @@
+print("[DEBUG] Importing settings.py - VERSION 2", flush=True)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from typing import Literal
@@ -76,12 +77,12 @@ class Settings(BaseSettings):
         return self.OMNIVOICE_VENV_DIR / "bin" / "python"
 
 
-_settings_instance: Settings | None = None
-
-
 def get_settings() -> Settings:
-    """Singleton para obtener la configuración (cacheada)."""
-    global _settings_instance
-    if _settings_instance is None:
-        _settings_instance = Settings()
-    return _settings_instance
+    """Obtener una nueva instancia de configuración que lee las variables de entorno actuales."""
+    settings = Settings()
+    print(f"[DEBUG] Creating Settings instance:")
+    print(f"[DEBUG]   OMNIVOICE_INSTALL_DIR: {settings.OMNIVOICE_INSTALL_DIR}")
+    print(f"[DEBUG]   OMNIVOICE_VENV_DIR: {settings.OMNIVOICE_VENV_DIR}")
+    print(f"[DEBUG]   model_path: {settings.model_path}")
+    print(f"[DEBUG]   python_bin: {settings.python_bin}")
+    return settings

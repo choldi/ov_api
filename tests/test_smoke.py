@@ -56,7 +56,9 @@ async def test_readiness_endpoint_without_install(async_client: AsyncClient, mon
     monkeypatch.setenv("OMNIVOICE_VENV_DIR", "/nope/venv")
     from omnivoice_api.settings import get_settings
 
-    get_settings.cache_clear()
+    # Reiniciar el singleton para que se relean las env vars
+    import omnivoice_api.settings
+    omnivoice_api.settings._settings_instance = None
 
     response = await async_client.get("/api/v1/health/ready")
 
@@ -65,5 +67,7 @@ async def test_readiness_endpoint_without_install(async_client: AsyncClient, mon
     assert data["status"] == "not_ready"
     assert data["checks"]["install_dir_exists"] is False
 
-    get_settings.cache_clear()
+    # Reiniciar el singleton nuevamente para limpiar después del test
+    import omnivoice_api.settings
+    omnivoice_api.settings._settings_instance = None
 

@@ -9,8 +9,6 @@ from omnivoice_api.settings import get_settings
 from omnivoice_api.core.omnivoice_engine import get_engine, close_engine
 from omnivoice_api.api.v1 import voices, tts
 
-settings = get_settings()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,13 +48,15 @@ async def health_check() -> JSONResponse:
     """Health check completo (modelo, GPU, DB)."""
     engine = await get_engine()
     health = await engine.health_check()
+    settings = get_settings()
     return JSONResponse(
         content={
             "status": "ok" if health["model_loaded"] else "degraded",
-            "gpu": health["gpu_available"],
-            "model_loaded": health["model_loaded"],
+            "version": settings.APP_VERSION,
             "device": health["device"],
-            "stock_voices": health["stock_voices_count"],
+            "install_dir": str(settings.OMNIVOICE_INSTALL_DIR),
+            "venv_dir": str(settings.OMNIVOICE_VENV_DIR),
+            "python_bin": str(settings.python_bin),
         }
     )
 

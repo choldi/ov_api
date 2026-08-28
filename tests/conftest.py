@@ -79,11 +79,22 @@ def _isolate_external_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Invalidar el cache de settings para que se relean las env vars
     from omnivoice_api.settings import get_settings
 
-    get_settings.cache_clear()
+    # Reiniciar el singleton para que se relean las env vars
+    import omnivoice_api.settings
+    omnivoice_api.settings._settings_instance = None
+
+    # Debug: print the environment variables being set
+    print(f"[DEBUG] Setting OMNIVOICE_INSTALL_DIR to: {str(fake_install)}")
+    print(f"[DEBUG] Setting OMNIVOICE_VENV_DIR to: {str(fake_venv)}")
 
     yield
 
-    get_settings.cache_clear()
+    # Reiniciar el singleton nuevamente para limpiar después del test
+    import omnivoice_api.settings
+    omnivoice_api.settings._settings_instance = None
+    
+    # Debug: print that we're cleaning up
+    print(f"[DEBUG] Cleaning up after test")
 
 
 # ---------------------------------------------------------------------------
