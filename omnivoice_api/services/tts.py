@@ -124,9 +124,8 @@ class TtsService:
         # Validate language matches voice
         if voice_data["language"] != language:
             raise UnsupportedLanguageError(
-                language, 
-                [voice_data["language"]], 
-                f"Voice {voice_id} is configured for language {voice_data['language']}"
+                language,
+                [voice_data["language"]],
             )
         
         # Get engine client
