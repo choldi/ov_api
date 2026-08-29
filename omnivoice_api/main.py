@@ -30,6 +30,7 @@ app = FastAPI(
 )
 
 # CORS
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -72,9 +73,25 @@ async def readiness() -> JSONResponse:
     """Readiness probe (Kubernetes)."""
     engine = await get_engine()
     health = await engine.health_check()
-    ready = health["model_loaded"]
+    settings = get_settings()
+    
+    # Check if installation directories exist
+    install_dir_exists = settings.OMNIVOICE_INSTALL_DIR.exists()
+    venv_python_exists = settings.python_bin.exists()
+    
+    # Installation is ready if both directories exist and model is loaded
+    installation_ready = install_dir_exists and venv_python_exists
+    model_ready = health["model_loaded"]
+    ready = installation_ready and model_ready
+    
     return JSONResponse(
-        content={"status": "ready" if ready else "not ready", "model_loaded": ready},
+        content={
+            "status": "ready" if ready else "not_ready",
+            "checks": {
+                "install_dir_exists": install_dir_exists,
+                "venv_python_exists": venv_python_exists,
+            }
+        },
         status_code=200 if ready else 503,
     )
 
