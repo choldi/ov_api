@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 from fastapi.responses import Response
 
-from omnivoice_api.core.engine_client import AudioResult
+from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
     UnsupportedEmotionError,
@@ -17,6 +17,7 @@ from omnivoice_api.core.exceptions import (
 )
 from omnivoice_api.settings import get_settings
 from omnivoice_api.services.tts import TtsService
+from omnivoice_api.services.voice_service import VoiceService
 
 router = APIRouter(tags=["tts"])
 

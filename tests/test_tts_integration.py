@@ -5,9 +5,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from omnivoice_api.main import app
+from omnivoice_api.api.v1.tts import get_tts_service
+from omnivoice_api.api.v1.voices import get_engine_client
 
 
 @pytest.fixture
@@ -25,8 +27,15 @@ def mock_tts_service() -> AsyncMock:
 @pytest.mark.asyncio
 async def test_tts_endpoint_success(mock_tts_service: AsyncMock) -> None:
     """Test de éxito del endpoint TTS."""
-    with patch("omnivoice_api.api.v1.tts.get_tts_service", return_value=mock_tts_service):
-        async with AsyncClient(app=app, base_url="http://test") as client:
+    # Override the dependency
+    async def override_get_tts_service():
+        yield mock_tts_service
+    
+    app.dependency_overrides[get_tts_service] = override_get_tts_service
+    
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/api/v1/tts",
                 json={
@@ -36,10 +45,12 @@ async def test_tts_endpoint_success(mock_tts_service: AsyncMock) -> None:
                     "speed": 1.0
                 }
             )
-    
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "audio/wav"
-    assert response.content == b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+        
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/wav"
+        assert response.content == b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -47,13 +58,17 @@ async def test_tts_endpoint_voice_not_found() -> None:
     """Test de error 404 cuando la voz no se encuentra."""
     from omnivoice_api.core.exceptions import VoiceNotFoundError
     
-    async def mock_get_tts_service():
-        service = AsyncMock()
-        service.synthesize_stock.side_effect = VoiceNotFoundError("voz-inexistente", "stock")
-        return service
+    mock_service = AsyncMock()
+    mock_service.synthesize_stock.side_effect = VoiceNotFoundError("voz-inexistente", "stock")
     
-    with patch("omnivoice_api.api.v1.tts.get_tts_service", side_effect=mock_get_tts_service):
-        async with AsyncClient(app=app, base_url="http://test") as client:
+    async def override_get_tts_service():
+        yield mock_service
+    
+    app.dependency_overrides[get_tts_service] = override_get_tts_service
+    
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/api/v1/tts",
                 json={
@@ -62,9 +77,11 @@ async def test_tts_endpoint_voice_not_found() -> None:
                     "language": "es"
                 }
             )
-    
-    assert response.status_code == 404
-    assert "voz-inexistente" in response.json()["detail"]
+        
+        assert response.status_code == 404
+        assert "voz-inexistente" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -72,13 +89,17 @@ async def test_tts_endpoint_unsupported_language() -> None:
     """Test de error 400 cuando el idioma no está soportado."""
     from omnivoice_api.core.exceptions import UnsupportedLanguageError
     
-    async def mock_get_tts_service():
-        service = AsyncMock()
-        service.synthesize_stock.side_effect = UnsupportedLanguageError("xx", ["es", "en"])
-        return service
+    mock_service = AsyncMock()
+    mock_service.synthesize_stock.side_effect = UnsupportedLanguageError("xx", ["es", "en"])
     
-    with patch("omnivoice_api.api.v1.tts.get_tts_service", side_effect=mock_get_tts_service):
-        async with AsyncClient(app=app, base_url="http://test") as client:
+    async def override_get_tts_service():
+        yield mock_service
+    
+    app.dependency_overrides[get_tts_service] = override_get_tts_service
+    
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
                 "/api/v1/tts",
                 json={
@@ -87,9 +108,11 @@ async def test_tts_endpoint_unsupported_language() -> None:
                     "language": "xx"
                 }
             )
-    
-    assert response.status_code == 400
-    assert "xx" in response.json()["detail"]
+        
+        assert response.status_code == 400
+        assert "xx" in response.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -102,22 +125,34 @@ async def test_voices_endpoint_success() -> None:
         StockVoice(voice_id="en-us-male", language="en", gender="male", name="English US Male")
     ]
     
-    async def mock_get_engine_client():
-        client = AsyncMock()
-        client.list_stock_voices.return_value = mock_voices
-        return client
+    mock_client = AsyncMock()
+    # Mock the list_stock_voices method to filter by language
+    async def mock_list_stock_voices(language=None):
+        if language is None:
+            return mock_voices
+        return [v for v in mock_voices if v.language == language]
     
-    with patch("omnivoice_api.api.v1.voices.get_engine_client", side_effect=mock_get_engine_client):
-        async with AsyncClient(app=app, base_url="http://test") as client:
+    mock_client.list_stock_voices.side_effect = mock_list_stock_voices
+    
+    async def override_get_engine_client():
+        yield mock_client
+    
+    app.dependency_overrides[get_engine_client] = override_get_engine_client
+    
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/v1/voices/stock?language=es")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["voice_id"] == "es-mx-male"
-    assert data[0]["language"] == "es"
-    assert data[0]["gender"] == "male"
-    assert data[0]["name"] == "Spanish MX Male"
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["voice_id"] == "es-mx-male"
+        assert data[0]["language"] == "es"
+        assert data[0]["gender"] == "male"
+        assert data[0]["name"] == "Spanish MX Male"
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -130,18 +165,24 @@ async def test_voices_endpoint_no_filter() -> None:
         StockVoice(voice_id="en-us-male", language="en", gender="male", name="English US Male")
     ]
     
-    async def mock_get_engine_client():
-        client = AsyncMock()
-        client.list_stock_voices.return_value = mock_voices
-        return client
+    mock_client = AsyncMock()
+    mock_client.list_stock_voices.return_value = mock_voices
     
-    with patch("omnivoice_api.api.v1.voices.get_engine_client", side_effect=mock_get_engine_client):
-        async with AsyncClient(app=app, base_url="http://test") as client:
+    async def override_get_engine_client():
+        yield mock_client
+    
+    app.dependency_overrides[get_engine_client] = override_get_engine_client
+    
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/v1/voices/stock")
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-    voice_ids = [v["voice_id"] for v in data]
-    assert "es-mx-male" in voice_ids
-    assert "en-us-male" in voice_ids
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        voice_ids = [v["voice_id"] for v in data]
+        assert "es-mx-male" in voice_ids
+        assert "en-us-male" in voice_ids
+    finally:
+        app.dependency_overrides.clear()
