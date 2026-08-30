@@ -20,9 +20,13 @@ class VoiceRepository:
     def __init__(self, db_path: str | None = None):
         """Initialize the repository with database path."""
         self._settings = get_settings()
-        self._db_path = db_path or self._settings.DATABASE_URL.replace(
-            "sqlite+aiosqlite:///", ""
-        )
+        url = db_path or self._settings.DATABASE_URL
+        # Strip SQLAlchemy driver prefix to get a plain file path
+        for prefix in ("sqlite+aiosqlite:///", "sqlite:///"):
+            if url.startswith(prefix):
+                url = url[len(prefix):]
+                break
+        self._db_path = url
         # Ensure the directory exists
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
 
