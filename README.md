@@ -107,9 +107,24 @@ Variables principales:
 ```bash
 curl -X POST "http://localhost:8000/api/v1/tts" \
   -H "Content-Type: application/json" \
-  -d '{"text": "Hola, esto es una prueba.", "voice_id": "es-mx-male", "language": "es"}' \
+  -d '{
+    "text": "Hola, esto es una prueba.",
+    "voice_id": "es-mx-male",
+    "language": "es",
+    "speed": 1.0,
+    "emotion": "happy",
+    "intensity": 0.8
+  }' \
   --output output.wav
 ```
+
+Parámetros:
+- `text` (requerido): Texto a sintetizar
+- `voice_id` (requerido): ID de la voz (ej: `es-mx-male`, `en-us-female`)
+- `language` (requerido): Código ISO 639-1 (ej: `es`, `en`)
+- `speed` (opcional): Velocidad 0.5-2.0, default 1.0
+- `emotion` (opcional): `neutral`, `happy`, `sad`, `angry`, `surprised`
+- `intensity` (opcional): Intensidad de la emoción 0.0-1.0
 
 ### Clonar voz
 ```bash
