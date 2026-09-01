@@ -156,7 +156,7 @@ class AudioValidator:
         data = np.clip(data, -1.0, 1.0)
         
         # Generate processed file path
-        storage_dir = Path(self._settings.STORAGE_VOICES_DIR)
+        storage_dir = Path(self._settings.VOICES_DIR)
         storage_dir.mkdir(parents=True, exist_ok=True)
         
         # Create a unique filename based on original path and timestamp
