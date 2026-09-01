@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from fastapi.responses import Response
 
 from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
@@ -35,7 +35,6 @@ async def get_tts_service() -> TtsService:
 
 @router.post("/tts", responses={200: {"content": {"audio/wav": {}}}}, response_class=Response)
 async def synthesize_tts(
-    request: Request,
     # Parámetros del cuerpo (requeridos)
     text: Annotated[str, Body(min_length=1, description="Texto a sintetizar")],
     voice_id: Annotated[str, Body(description="ID de la voz a utilizar")],
