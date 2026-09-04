@@ -23,28 +23,68 @@ router = APIRouter(tags=["tts"])
 
 
 async def get_tts_service() -> TtsService:
-        """Dependency para obtener el servicio TTS."""
-        engine_client = OmniVoiceEngineClient()
-        voice_service = VoiceService()
-        service = TtsService(engine_client=engine_client, voice_service=voice_service)
-        try:
-            yield service
-        finally:
-            await service.close()
+    """Dependency para obtener el servicio TTS."""
+    engine_client = OmniVoiceEngineClient()
+    voice_service = VoiceService()
+    service = TtsService(engine_client=engine_client, voice_service=voice_service)
+    try:
+        yield service
+    finally:
+        await service.close()
 
 
-@router.post("/tts", responses={200: {"content": {"audio/wav": {}}}}, response_class=Response)
+@router.post(
+    "/tts",
+    responses={200: {"content": {"audio/wav": {}}}},
+    response_class=Response,
+    summary="Sintetizar texto a voz",
+    description="Convierte texto en audio usando una voz stock o clonada. Soporta control de velocidad y emoción.",
+)
 async def synthesize_tts(
     # Parámetros del cuerpo (requeridos)
-    text: Annotated[str, Body(min_length=1, description="Texto a sintetizar")],
-    voice_id: Annotated[str, Body(description="ID de la voz a utilizar")],
-    language: Annotated[str, Body(description="Idioma del texto (ISO 639-1)")],
+    text: Annotated[
+        str,
+        Body(
+            min_length=1,
+            description="Texto a sintetizar",
+            examples=["Hola, esto es una prueba de síntesis de voz"],
+        ),
+    ],
+    voice_id: Annotated[
+        str,
+        Body(
+            description="ID de la voz a utilizar (ej: es-mx-male, es-es-female)",
+            examples=["es-mx-male"],
+        ),
+    ],
+    language: Annotated[
+        str,
+        Body(
+            description="Idioma del texto (ISO 639-1, ej: es, en, fr)",
+            examples=["es"],
+        ),
+    ],
     # Parámetros opcionales
-    speed: Annotated[float, Body(ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
-    emotion: Annotated[str | None, Body(description="Emoción a aplicar")] = None,
-    intensity: Annotated[float | None, Body(ge=0.0, le=1.0, description="Intensidad de la emoción")] = None,
+    speed: Annotated[
+        float,
+        Body(ge=0.5, le=2.0, description="Velocidad de habla (0.5 a 2.0)"),
+    ] = 1.0,
+    emotion: Annotated[
+        str | None,
+        Body(
+            description="Emoción a aplicar (neutral, happy, sad, angry, surprised)",
+            examples=[None, "happy"],
+        ),
+    ] = None,
+    intensity: Annotated[
+        float | None,
+        Body(ge=0.0, le=1.0, description="Intensidad de la emoción (0.0 a 1.0)"),
+    ] = None,
     # Cabeceras opcionales
-    accept: Annotated[str | None, Header(description="Tipo de contenido esperado")] = None,
+    accept: Annotated[
+        str | None,
+        Header(description="Tipo de contenido esperado (audio/wav o audio/mpeg)"),
+    ] = None,
     # Dependencias
     tts_service: TtsService = Depends(get_tts_service),
 ) -> Response:
