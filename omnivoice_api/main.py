@@ -40,7 +40,9 @@ app.add_middleware(
 )
 
 # Routers
+# voices.router ya tiene prefix="/voices", por lo que se monta en /api/v1/voices
 app.include_router(voices.router, prefix="/api/v1")
+# tts.router ahora tiene prefix="/tts", por lo que se monta en /api/v1/tts
 app.include_router(tts.router, prefix="/api/v1")
 
 

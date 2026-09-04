@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
@@ -15,11 +14,10 @@ from omnivoice_api.core.exceptions import (
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
-from omnivoice_api.settings import get_settings
 from omnivoice_api.services.tts import TtsService
 from omnivoice_api.services.voice_service import VoiceService
 
-router = APIRouter(tags=["tts"])
+router = APIRouter(prefix="/tts", tags=["tts"])
 
 
 async def get_tts_service() -> TtsService:
@@ -34,7 +32,7 @@ async def get_tts_service() -> TtsService:
 
 
 @router.post(
-    "/tts",
+    "",
     responses={200: {"content": {"audio/wav": {}}}},
     response_class=Response,
     summary="Sintetizar texto a voz",
