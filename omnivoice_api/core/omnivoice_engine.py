@@ -9,6 +9,7 @@ import math
 import os
 import struct
 import sys
+import threading
 import io
 import wave
 from abc import ABC, abstractmethod
@@ -24,6 +25,28 @@ from omnivoice_api.core.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _log_subprocess_context(operation: str, cmd: list[str]) -> None:
+    """Log de diagnóstico del contexto donde se va a crear un subproceso."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop_info = (
+            f"loop_id={id(loop)}, "
+            f"loop_class={type(loop).__name__}, "
+            f"is_proactor={isinstance(loop, asyncio.ProactorEventLoop)}, "
+            f"is_selector={isinstance(loop, asyncio.SelectorEventLoop)}"
+        )
+    except RuntimeError:
+        loop_info = "NO_RUNNING_LOOP"
+
+    thread_info = f"thread_id={threading.get_ident()}, thread_name={threading.current_thread().name}"
+    platform_info = f"platform={sys.platform}"
+
+    logger.info(
+        "Subprocess context for op=%s: %s | %s | %s | cmd=%s",
+        operation, platform_info, thread_info, loop_info, cmd,
+    )
 
 
 class OmniVoiceEngineInterface(Protocol):
@@ -145,6 +168,27 @@ class OmniVoiceEngine:
                 "Las síntesis se delegarán al CLI en %s",
                 self._settings.python_bin,
             )
+        except EngineUnavailableError:
+            # Ya viene con contexto suficiente, solo re-lanzamos
+            raise
+        except NotImplementedError as e:
+            # Caso específico: el event loop activo no soporta subprocess_exec
+            # (típico en Windows con SelectorEventLoop o cuando se invoca desde
+            # un thread que no es el principal).
+            logger.error(
+                "NotImplementedError al inicializar motor real. Esto suele indicar "
+                "que el event loop activo no soporta asyncio.subprocess. "
+                "En Windows, asegúrate de usar WindowsProactorEventLoopPolicy. "
+                "platform=%s, thread=%s",
+                sys.platform,
+                threading.current_thread().name,
+            )
+            raise EngineUnavailableError(
+                f"Event loop no soporta subprocess_exec (NotImplementedError). "
+                f"En Windows se requiere ProactorEventLoop. platform={sys.platform}, "
+                f"thread={threading.current_thread().name}. "
+                f"Error original: {e}"
+            ) from e
         except Exception as e:
             logger.exception("Error inicializando motor OmniVoice real")
             raise EngineUnavailableError(f"Failed to initialize real OmniVoice engine: {e}") from e
@@ -169,10 +213,12 @@ class OmniVoiceEngine:
             logger.info("Ruta de modelo OK: %s", model_path)
 
         # Verificar que el binario python es ejecutable
+        cmd = [str(python_bin), "--version"]
+        _log_subprocess_context(operation="validate_python_version", cmd=cmd)
+
         try:
             proc = await asyncio.create_subprocess_exec(
-                str(python_bin),
-                "--version",
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -186,6 +232,16 @@ class OmniVoiceEngine:
                 raise EngineUnavailableError(
                     f"Python del venv OmniVoice no ejecutable (rc={proc.returncode}): {version_line}"
                 )
+        except NotImplementedError as e:
+            logger.error(
+                "NotImplementedError creando subproceso para validar python. "
+                "cmd=%s. Esto indica que el event loop no soporta subprocess_exec.",
+                cmd,
+            )
+            raise EngineUnavailableError(
+                f"Event loop no soporta subprocess_exec al validar python del venv. "
+                f"En Windows se requiere ProactorEventLoop. cmd={cmd}. Error: {e}"
+            ) from e
         except asyncio.TimeoutError as e:
             raise EngineUnavailableError(
                 f"Timeout verificando python del venv OmniVoice ({self._settings.ENGINE_STARTUP_TIMEOUT_SEC}s)"
@@ -235,11 +291,11 @@ class OmniVoiceEngine:
         try:
             python_bin = self._settings.python_bin
             cli_entry = self._settings.OMNIVOICE_CLI_ENTRY
+            cmd = [str(python_bin), "-m", cli_entry, "--health"]
+            _log_subprocess_context(operation="warmup_cli_health", cmd=cmd)
+
             proc = await asyncio.create_subprocess_exec(
-                str(python_bin),
-                "-m",
-                cli_entry,
-                "--health",
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -265,6 +321,13 @@ class OmniVoiceEngine:
                     proc.returncode,
                     stderr.decode(errors="replace").strip()[:500],
                 )
+        except NotImplementedError as e:
+            logger.error(
+                "NotImplementedError en warmup del CLI OmniVoice. "
+                "El event loop activo no soporta subprocess_exec."
+            )
+            # No bloqueante: solo warning
+            logger.warning("Warmup omitido por NotImplementedError: %s", e)
         except FileNotFoundError as e:
             logger.warning("No se pudo ejecutar CLI OmniVoice en warmup: %s", e)
         except Exception as e:
@@ -314,6 +377,7 @@ class OmniVoiceEngine:
             out_path,
         ]
 
+        _log_subprocess_context(operation=operation, cmd=cmd)
         logger.info(
             "Invocando CLI OmniVoice REAL: op=%s, cmd=%s",
             operation,
@@ -368,6 +432,18 @@ class OmniVoiceEngine:
             )
             return wav_bytes
 
+        except NotImplementedError as e:
+            logger.error(
+                "NotImplementedError invocando CLI OmniVoice. "
+                "El event loop activo no soporta subprocess_exec. "
+                "op=%s, cmd=%s",
+                operation, cmd,
+            )
+            raise EngineUnavailableError(
+                f"Event loop no soporta subprocess_exec al invocar CLI OmniVoice. "
+                f"En Windows se requiere ProactorEventLoop. op={operation}, cmd={cmd}. "
+                f"Error: {e}"
+            ) from e
         except FileNotFoundError as e:
             raise EngineUnavailableError(
                 f"No se pudo ejecutar python del venv OmniVoice ({python_bin}): {e}"

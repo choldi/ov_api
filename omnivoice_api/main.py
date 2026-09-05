@@ -1,6 +1,7 @@
 """Punto de entrada principal de OmniVoice API."""
 
 import asyncio
+import logging
 import sys
 
 # En Windows, el SelectorEventLoop (default de uvicorn) NO soporta subprocesses
@@ -9,6 +10,24 @@ import sys
 # Debe ejecutarse antes de que uvicorn cree el event loop.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+# Configurar logging básico temprano para que los logs de diagnóstico
+# del engine sean visibles incluso si falla el arranque.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
+# Log de diagnóstico: confirmar la política de event loop aplicada
+if sys.platform == "win32":
+    current_policy = asyncio.get_event_loop_policy()
+    logger.info(
+        "Windows detectado. Event loop policy activa: %s. "
+        "ProactorEventLoop es requerido para soportar asyncio.subprocess.",
+        type(current_policy).__name__,
+    )
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -23,9 +42,19 @@ from omnivoice_api.api.v1 import voices, tts
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await get_engine()  # Inicializa el engine (warmup incluido)
+    logger.info("Application startup: inicializando engine OmniVoice...")
+    try:
+        await get_engine()  # Inicializa el engine (warmup incluido)
+        logger.info("Engine OmniVoice inicializado correctamente")
+    except Exception as e:
+        logger.exception(
+            "Fallo durante la inicialización del engine en lifespan.startup: %s",
+            e,
+        )
+        raise
     yield
     # Shutdown
+    logger.info("Application shutdown: cerrando engine OmniVoice...")
     await close_engine()
 
 
