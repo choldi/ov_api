@@ -1,4 +1,4 @@
-print("[DEBUG] Importing settings.py - VERSION 2", flush=True)
+print("[DEBUG] Importing settings.py - VERSION 3", flush=True)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from typing import Literal
@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     ENGINE_CONCURRENCY: int = 1
     ENGINE_STARTUP_TIMEOUT_SEC: int = 30
     ENGINE_REQUEST_TIMEOUT_SEC: int = 120
+
+    # --- Mock / Real engine toggle ---
+    # Si True, usa generación de tonos mock (útil para tests sin GPU/modelo).
+    # Si False (por defecto), llama al motor OmniVoice real vía subprocess.
+    OMNIVOICE_USE_MOCK: bool = False
 
     # --- Database ---
     DATABASE_URL: str = "sqlite:///storage/omnivoice.db"
@@ -85,4 +90,5 @@ def get_settings() -> Settings:
     print(f"[DEBUG]   OMNIVOICE_VENV_DIR: {settings.OMNIVOICE_VENV_DIR}")
     print(f"[DEBUG]   model_path: {settings.model_path}")
     print(f"[DEBUG]   python_bin: {settings.python_bin}")
+    print(f"[DEBUG]   OMNIVOICE_USE_MOCK: {settings.OMNIVOICE_USE_MOCK}")
     return settings

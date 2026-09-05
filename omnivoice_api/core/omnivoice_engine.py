@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
+import os
 import struct
+import sys
 import io
 import wave
 from abc import ABC, abstractmethod
@@ -72,7 +75,9 @@ class OmniVoiceEngine:
     """
     Implementación concreta del motor OmniVoice (singleton).
 
-    Envuelve la librería k2-fsa/OmniVoice real.
+    Envuelve la librería k2-fsa/OmniVoice real mediante invocación al CLI
+    del venv externo configurado en settings. Si OMNIVOICE_USE_MOCK=True,
+    genera tonos de prueba (útil para tests sin GPU/modelo).
     """
 
     _instance: OmniVoiceEngine | None = None
@@ -96,6 +101,7 @@ class OmniVoiceEngine:
         self._stock_voices: list[dict] = []
         self._emotions: list[str] = ["neutral", "happy", "sad", "angry", "surprised"]
         self._languages: list[str] = self._settings.omnilang_list
+        self._use_mock: bool = self._settings.OMNIVOICE_USE_MOCK
 
     async def initialize(self) -> None:
         """Inicializa el modelo (carga pesos, warm-up)."""
@@ -105,31 +111,89 @@ class OmniVoiceEngine:
 
         logger.info("Initializing OmniVoice engine...")
         self._settings = get_settings()
+        self._use_mock = self._settings.OMNIVOICE_USE_MOCK
         logger.debug("Settings INSTALL_DIR: %s", self._settings.OMNIVOICE_INSTALL_DIR)
         logger.debug("Settings VENV_DIR: %s", self._settings.OMNIVOICE_VENV_DIR)
         logger.debug("Settings MODEL_PATH: %s", self._settings.OMNIVOICE_MODEL_PATH)
         logger.debug("Settings model_path property: %s", self._settings.model_path)
         logger.debug("Settings python_bin property: %s", self._settings.python_bin)
+        logger.debug("Settings OMNIVOICE_USE_MOCK: %s", self._use_mock)
 
         self._device = self._settings.OMNIVOICE_DEVICE
         logger.info("Device set to: %s", self._device)
-        
-        logger.info("Cargando modelo OmniVoice en %s...", self._device)
-        try:
-            # TODO: Cargar modelo real de OmniVoice (k2-fsa)
-            # self._model = load_omnivoice_model(self._settings.OMNIVOICE_MODEL_PATH, self._device)
-            # self._stock_voices = await self._load_stock_voices()
 
-            # Por ahora, mock para que los tests pasen
+        if self._use_mock:
+            logger.warning(
+                "OMNIVOICE_USE_MOCK=True -> usando generación MOCK (tonos de prueba). "
+                "El motor real NO será invocado."
+            )
             self._model = object()  # Mock model object
             self._stock_voices = self._get_mock_stock_voices()
             await self.warmup()
-            logger.info("Modelo OmniVoice cargado correctamente")
-            logger.debug("Engine initialized successfully, _model is not None: %s", self._model is not None)
+            logger.info("Mock engine inicializado correctamente")
+            return
+
+        # --- Modo REAL: validar entorno antes de cargar ---
+        logger.info("OMNIVOICE_USE_MOCK=False -> cargando motor REAL OmniVoice (k2-fsa)")
+        try:
+            await self._validate_real_engine_environment()
+            self._model = object()  # Marcador de "modelo cargado" (la carga real ocurre en el subprocess)
+            self._stock_voices = self._get_mock_stock_voices()  # TODO: cargar desde el motor real
+            await self.warmup()
+            logger.info(
+                "Motor OmniVoice REAL inicializado correctamente. "
+                "Las síntesis se delegarán al CLI en %s",
+                self._settings.python_bin,
+            )
         except Exception as e:
-            logger.exception("Error cargando modelo OmniVoice")
-            logger.debug("Error initializing engine: %s", e)
-            raise EngineUnavailableError(f"Failed to load OmniVoice model: {e}") from e
+            logger.exception("Error inicializando motor OmniVoice real")
+            raise EngineUnavailableError(f"Failed to initialize real OmniVoice engine: {e}") from e
+
+    async def _validate_real_engine_environment(self) -> None:
+        """Valida que el entorno para invocar el motor real está disponible."""
+        python_bin = self._settings.python_bin
+        if not python_bin.exists():
+            raise EngineUnavailableError(
+                f"Python del venv de OmniVoice no encontrado en: {python_bin}. "
+                f"Verifica OMNIVOICE_VENV_DIR."
+            )
+        logger.info("Python del venv OmniVoice OK: %s", python_bin)
+
+        model_path = self._settings.model_path
+        if not model_path.exists():
+            logger.warning(
+                "Ruta de modelo no existe: %s. Se continuará pero la síntesis podría fallar.",
+                model_path,
+            )
+        else:
+            logger.info("Ruta de modelo OK: %s", model_path)
+
+        # Verificar que el binario python es ejecutable
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                str(python_bin),
+                "--version",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=self._settings.ENGINE_STARTUP_TIMEOUT_SEC,
+            )
+            version_line = (stdout or stderr).decode(errors="replace").strip()
+            logger.info("Versión de Python del venv OmniVoice: %s", version_line)
+            if proc.returncode != 0:
+                raise EngineUnavailableError(
+                    f"Python del venv OmniVoice no ejecutable (rc={proc.returncode}): {version_line}"
+                )
+        except asyncio.TimeoutError as e:
+            raise EngineUnavailableError(
+                f"Timeout verificando python del venv OmniVoice ({self._settings.ENGINE_STARTUP_TIMEOUT_SEC}s)"
+            ) from e
+        except FileNotFoundError as e:
+            raise EngineUnavailableError(
+                f"No se pudo ejecutar python del venv OmniVoice: {e}"
+            ) from e
 
     def _get_mock_stock_voices(self) -> list[dict]:
         """Voces stock mock para desarrollo/tests."""
@@ -160,14 +224,162 @@ class OmniVoiceEngine:
 
     async def warmup(self) -> None:
         """Ejecuta una síntesis de prueba para calentar el modelo."""
-        if self._model is None:
-            # Mock warmup
+        if self._use_mock:
             logger.debug("Mock warmup: sleeping 10ms")
             await asyncio.sleep(0.01)
             return
 
-        # TODO: Warmup real
-        # await asyncio.to_thread(self._model.synthesize, "test", "es-mx-male", "es")
+        # En modo real, el warmup ocurre dentro del subprocess la primera vez.
+        # Aquí solo verificamos que el CLI responde.
+        logger.info("Warmup del motor REAL: verificando CLI OmniVoice...")
+        try:
+            python_bin = self._settings.python_bin
+            cli_entry = self._settings.OMNIVOICE_CLI_ENTRY
+            proc = await asyncio.create_subprocess_exec(
+                str(python_bin),
+                "-m",
+                cli_entry,
+                "--health",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=self._settings.ENGINE_STARTUP_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                logger.warning("Timeout en warmup --health del CLI OmniVoice (continuando)")
+                return
+
+            if proc.returncode == 0:
+                logger.info(
+                    "Warmup OK. CLI OmniVoice responde. stdout=%s",
+                    stdout.decode(errors="replace").strip()[:200],
+                )
+            else:
+                logger.warning(
+                    "Warmup CLI OmniVoice rc=%d. stderr=%s",
+                    proc.returncode,
+                    stderr.decode(errors="replace").strip()[:500],
+                )
+        except FileNotFoundError as e:
+            logger.warning("No se pudo ejecutar CLI OmniVoice en warmup: %s", e)
+        except Exception as e:
+            logger.warning("Warmup del motor real falló (no bloqueante): %s", e)
+
+    async def _invoke_omnivoice_cli(
+        self,
+        *,
+        operation: str,
+        payload: dict,
+    ) -> bytes:
+        """
+        Invoca el CLI de OmniVoice en el venv externo y devuelve los WAV bytes.
+
+        Contrato del CLI (esperado):
+          python -m omnivoice_cli.__main__ --op <operation> [--in <path>] [--out <path>]
+        - Lee un JSON con los parámetros desde --in <path> (o stdin).
+        - Escribe el WAV resultante en --out <path> (o stdout en binario).
+
+        Si el CLI no está disponible o falla, se lanza EngineUnavailableError.
+        """
+        python_bin = self._settings.python_bin
+        cli_entry = self._settings.OMNIVOICE_CLI_ENTRY
+
+        # Escribir payload a archivo temporal (más robusto que stdin para payloads grandes)
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".json",
+            delete=False,
+            encoding="utf-8",
+        ) as in_file:
+            json.dump(payload, in_file, ensure_ascii=False)
+            in_path = in_file.name
+
+        out_path = tempfile.mktemp(suffix=".wav")
+
+        cmd = [
+            str(python_bin),
+            "-m",
+            cli_entry,
+            "--op",
+            operation,
+            "--in",
+            in_path,
+            "--out",
+            out_path,
+        ]
+
+        logger.info(
+            "Invocando CLI OmniVoice REAL: op=%s, cmd=%s",
+            operation,
+            " ".join(cmd),
+        )
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=self._settings.ENGINE_REQUEST_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError as e:
+                proc.kill()
+                await proc.wait()
+                raise EngineUnavailableError(
+                    f"Timeout ({self._settings.ENGINE_REQUEST_TIMEOUT_SEC}s) invocando CLI OmniVoice "
+                    f"para op={operation}"
+                ) from e
+
+            if proc.returncode != 0:
+                err_msg = stderr.decode(errors="replace").strip()
+                logger.error(
+                    "CLI OmniVoice rc=%d para op=%s. stderr=%s",
+                    proc.returncode,
+                    operation,
+                    err_msg[:1000],
+                )
+                raise EngineUnavailableError(
+                    f"CLI OmniVoice falló (rc={proc.returncode}) para op={operation}: {err_msg[:500]}"
+                )
+
+            # Leer WAV de salida
+            if not os.path.exists(out_path):
+                raise EngineUnavailableError(
+                    f"CLI OmniVoice no generó archivo de salida: {out_path}"
+                )
+
+            with open(out_path, "rb") as f:
+                wav_bytes = f.read()
+
+            logger.info(
+                "CLI OmniVoice OK: op=%s, wav_bytes=%d, stdout_preview=%s",
+                operation,
+                len(wav_bytes),
+                stdout.decode(errors="replace").strip()[:200],
+            )
+            return wav_bytes
+
+        except FileNotFoundError as e:
+            raise EngineUnavailableError(
+                f"No se pudo ejecutar python del venv OmniVoice ({python_bin}): {e}"
+            ) from e
+        finally:
+            # Limpieza de temporales
+            for p in (in_path, out_path):
+                try:
+                    if os.path.exists(p):
+                        os.unlink(p)
+                except OSError:
+                    pass
 
     async def synthesize_stock(
         self,
@@ -181,8 +393,8 @@ class OmniVoiceEngine:
     ) -> bytes:
         """Sintetiza con voz stock."""
         logger.debug(
-            "synthesize_stock called: text_len=%d, voice_id=%s, language=%s, speed=%.2f, emotion=%s, intensity=%s",
-            len(text), voice_id, language, speed, emotion, intensity
+            "synthesize_stock called: text_len=%d, voice_id=%s, language=%s, speed=%.2f, emotion=%s, intensity=%s, use_mock=%s",
+            len(text), voice_id, language, speed, emotion, intensity, self._use_mock
         )
 
         # Validar voz
@@ -201,32 +413,49 @@ class OmniVoiceEngine:
             logger.error("Unsupported emotion: %s, supported=%s", emotion, self._emotions)
             raise UnsupportedEmotionError(emotion, self._emotions)
 
-        logger.info("Starting synthesis: voice_id=%s, language=%s, text='%s...'", voice_id, language, text[:50])
+        logger.info(
+            "Starting synthesis: voice_id=%s, language=%s, text='%s...', mode=%s",
+            voice_id, language, text[:50], "MOCK" if self._use_mock else "REAL"
+        )
 
         async with self._semaphore:
-            # TODO: Síntesis real con OmniVoice
-            # wav_bytes = await asyncio.to_thread(
-            #     self._model.synthesize,
-            #     text=text,
-            #     speaker_id=voice_id,
-            #     language=language,
-            #     speed=speed,
-            #     emotion=emotion,
-            #     intensity=intensity,
-            # )
-            # logger.debug("Real synthesis completed, wav_bytes=%d", len(wav_bytes))
-            # return wav_bytes
+            if self._use_mock:
+                # MOCK: Generar tono de prueba audible (440Hz)
+                logger.warning(
+                    "USING MOCK SYNTHESIS (OMNIVOICE_USE_MOCK=True) - "
+                    "generating test tone (440Hz) instead of real OmniVoice output"
+                )
+                wav_bytes = self._generate_test_tone_wav(
+                    duration_sec=max(0.5, len(text) * 0.08),
+                    sample_rate=22050,
+                    frequency=440.0,
+                    amplitude=0.3,
+                )
+                logger.info(
+                    "Mock synthesis completed: wav_bytes=%d, duration=%.2fs",
+                    len(wav_bytes), len(text) * 0.08,
+                )
+                return wav_bytes
 
-            # MOCK: Generar tono de prueba audible (440Hz) en lugar de silencio
-            # Esto permite validar el pipeline de audio completo
-            logger.warning("USING MOCK SYNTHESIS - generating test tone (440Hz) instead of real OmniVoice output")
-            wav_bytes = self._generate_test_tone_wav(
-                duration_sec=max(0.5, len(text) * 0.08),  # ~80ms por caracter, mínimo 0.5s
-                sample_rate=22050,
-                frequency=440.0,  # La4
-                amplitude=0.3
+            # REAL: invocar CLI de OmniVoice
+            payload = {
+                "text": text,
+                "voice_id": voice_id,
+                "language": language,
+                "speed": speed,
+                "emotion": emotion,
+                "intensity": intensity,
+                "model_path": str(self._settings.model_path),
+                "device": self._device,
+            }
+            wav_bytes = await self._invoke_omnivoice_cli(
+                operation="synthesize_stock",
+                payload=payload,
             )
-            logger.info("Mock synthesis completed: wav_bytes=%d, duration=%.2fs", len(wav_bytes), len(text) * 0.08)
+            logger.info(
+                "REAL synthesis completed via OmniVoice CLI: wav_bytes=%d",
+                len(wav_bytes),
+            )
             return wav_bytes
 
     async def synthesize_clone(
@@ -240,8 +469,8 @@ class OmniVoiceEngine:
     ) -> bytes:
         """Sintetiza con voz clonada."""
         logger.debug(
-            "synthesize_clone called: text_len=%d, ref_path=%s, language=%s, emotion=%s, intensity=%s",
-            len(text), reference_audio_path, language, emotion, intensity
+            "synthesize_clone called: text_len=%d, ref_path=%s, language=%s, emotion=%s, intensity=%s, use_mock=%s",
+            len(text), reference_audio_path, language, emotion, intensity, self._use_mock
         )
 
         # Validar idioma
@@ -254,40 +483,51 @@ class OmniVoiceEngine:
             logger.error("Unsupported emotion: %s, supported=%s", emotion, self._emotions)
             raise UnsupportedEmotionError(emotion, self._emotions)
 
-        # Procesar ruta de audio de referencia
-        import os
-        if not os.path.exists(reference_audio_path):
-            logger.warning(
-                "Reference audio not found: %s. Using mock embedding for development.",
-                reference_audio_path
+        # Validar referencia (en modo real debe existir)
+        if not self._use_mock and not os.path.exists(reference_audio_path):
+            raise EngineUnavailableError(
+                f"Reference audio no encontrado para clonado: {reference_audio_path}"
             )
-            reference_audio_path = "/tmp/mock-reference.wav"
 
-        logger.info("Starting clone synthesis: ref_path=%s, language=%s, text='%s...'", 
-                    reference_audio_path, language, text[:50])
+        logger.info(
+            "Starting clone synthesis: ref_path=%s, language=%s, text='%s...', mode=%s",
+            reference_audio_path, language, text[:50], "MOCK" if self._use_mock else "REAL"
+        )
 
         async with self._semaphore:
-            # TODO: Síntesis real con OmniVoice usando embedding de voz clonada
-            # embedding = self._get_or_compute_embedding(reference_audio_path)
-            # wav_bytes = await asyncio.to_thread(
-            #     self._model.synthesize,
-            #     text=text,
-            #     speaker_embedding=embedding,
-            #     language=language,
-            #     speed=speed,
-            #     emotion=emotion,
-            #     intensity=intensity,
-            # )
-            
-            # MOCK: Generar tono de prueba audible (distinto al stock para diferenciar)
-            logger.warning("USING MOCK CLONE SYNTHESIS - generating test tone (880Hz) instead of real OmniVoice output")
-            wav_bytes = self._generate_test_tone_wav(
-                duration_sec=max(0.5, len(text) * 0.08),
-                sample_rate=22050,
-                frequency=880.0,  # La5 (octava arriba para diferenciar)
-                amplitude=0.3
+            if self._use_mock:
+                # MOCK: Generar tono de prueba audible (880Hz)
+                logger.warning(
+                    "USING MOCK CLONE SYNTHESIS (OMNIVOICE_USE_MOCK=True) - "
+                    "generating test tone (880Hz) instead of real OmniVoice output"
+                )
+                wav_bytes = self._generate_test_tone_wav(
+                    duration_sec=max(0.5, len(text) * 0.08),
+                    sample_rate=22050,
+                    frequency=880.0,
+                    amplitude=0.3,
+                )
+                logger.info("Mock clone synthesis completed: wav_bytes=%d", len(wav_bytes))
+                return wav_bytes
+
+            # REAL: invocar CLI de OmniVoice
+            payload = {
+                "text": text,
+                "reference_audio_path": reference_audio_path,
+                "language": language,
+                "emotion": emotion,
+                "intensity": intensity,
+                "model_path": str(self._settings.model_path),
+                "device": self._device,
+            }
+            wav_bytes = await self._invoke_omnivoice_cli(
+                operation="synthesize_clone",
+                payload=payload,
             )
-            logger.info("Mock clone synthesis completed: wav_bytes=%d", len(wav_bytes))
+            logger.info(
+                "REAL clone synthesis completed via OmniVoice CLI: wav_bytes=%d",
+                len(wav_bytes),
+            )
             return wav_bytes
 
     async def list_stock_voices(self, language: str | None = None) -> list[dict]:
@@ -321,6 +561,9 @@ class OmniVoiceEngine:
             "device": self._device,
             "stock_voices_count": len(self._stock_voices),
             "vram_free_mb": vram_free_mb,
+            "mode": "MOCK" if self._use_mock else "REAL",
+            "python_bin": str(self._settings.python_bin),
+            "model_path": str(self._settings.model_path),
         }
         logger.debug("health_check: %s", health)
         return health
@@ -337,46 +580,44 @@ class OmniVoiceEngine:
         return buffer.getvalue()
 
     def _generate_test_tone_wav(
-        self, 
-        duration_sec: float = 1.0, 
-        sample_rate: int = 22050, 
+        self,
+        duration_sec: float = 1.0,
+        sample_rate: int = 22050,
         frequency: float = 440.0,
-        amplitude: float = 0.3
+        amplitude: float = 0.3,
     ) -> bytes:
         """
         Genera un WAV con un tono senoidal audible para testing.
-        
+
         Args:
             duration_sec: Duración en segundos
             sample_rate: Frecuencia de muestreo (Hz)
             frequency: Frecuencia del tono (Hz)
             amplitude: Amplitud 0.0-1.0
-            
+
         Returns:
             Bytes del archivo WAV
         """
         num_samples = int(duration_sec * sample_rate)
         max_amplitude = 32767  # 16-bit signed max
-        
+
         # Generar muestras de onda senoidal
         samples = []
         for i in range(num_samples):
             t = i / sample_rate
             value = amplitude * math.sin(2 * math.pi * frequency * t)
-            # Convertir a 16-bit signed integer
             sample = int(max_amplitude * value)
-            samples.append(struct.pack('<h', sample))  # little-endian signed short
-        
+            samples.append(struct.pack('<h', sample))
+
         audio_data = b''.join(samples)
-        
-        # Escribir WAV
+
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
-            wav_file.setnchannels(1)  # mono
-            wav_file.setsampwidth(2)  # 16-bit
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
             wav_file.setframerate(sample_rate)
             wav_file.writeframes(audio_data)
-        
+
         wav_bytes = buffer.getvalue()
         logger.debug(
             "Generated test tone: duration=%.2fs, freq=%.1fHz, amp=%.2f, samples=%d, bytes=%d",
@@ -406,5 +647,4 @@ async def close_engine() -> None:
     global _engine_instance
     if _engine_instance is not None:
         logger.info("Closing OmniVoice engine")
-        # TODO: cleanup real si es necesario
         _engine_instance = None
