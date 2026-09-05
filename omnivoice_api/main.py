@@ -1,5 +1,15 @@
 """Punto de entrada principal de OmniVoice API."""
 
+import asyncio
+import sys
+
+# En Windows, el SelectorEventLoop (default de uvicorn) NO soporta subprocesses
+# (asyncio.create_subprocess_exec -> NotImplementedError). El engine invoca el
+# CLI de OmniVoice vía subprocess, por lo que forzamos ProactorEventLoop.
+# Debe ejecutarse antes de que uvicorn cree el event loop.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -76,16 +86,16 @@ async def readiness() -> JSONResponse:
     engine = await get_engine()
     health = await engine.health_check()
     settings = get_settings()
-    
+
     # Check if installation directories exist
     install_dir_exists = settings.OMNIVOICE_INSTALL_DIR.exists()
     venv_python_exists = settings.python_bin.exists()
-    
+
     # Installation is ready if both directories exist and model is loaded
     installation_ready = install_dir_exists and venv_python_exists
     model_ready = health["model_loaded"]
     ready = installation_ready and model_ready
-    
+
     return JSONResponse(
         content={
             "status": "ready" if ready else "not_ready",
