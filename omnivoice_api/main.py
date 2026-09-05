@@ -4,12 +4,21 @@ import asyncio
 import logging
 import sys
 
+# --- Configuración del Event Loop Policy ---
 # En Windows, el SelectorEventLoop (default de uvicorn) NO soporta subprocesses
 # (asyncio.create_subprocess_exec -> NotImplementedError). El engine invoca el
 # CLI de OmniVoice vía subprocess, por lo que forzamos ProactorEventLoop.
-# Debe ejecutarse antes de que uvicorn cree el event loop.
+# En Linux/Unix, el SelectorEventLoop por defecto sí soporta subprocess_exec,
+# pero lo fijamos explícitamente para tener un comportamiento determinista.
+# Debe ejecutarse ANTES de que uvicorn cree el event loop.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    _EVENT_LOOP_POLICY_NAME = "WindowsProactorEventLoopPolicy"
+else:
+    # En Unix/Linux, el default es SelectorEventLoop que sí soporta subprocess_exec.
+    # Lo fijamos explícitamente para ser deterministas.
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+    _EVENT_LOOP_POLICY_NAME = type(asyncio.get_event_loop_policy()).__name__
 
 # Configurar logging básico temprano para que los logs de diagnóstico
 # del engine sean visibles incluso si falla el arranque.
@@ -21,13 +30,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Log de diagnóstico: confirmar la política de event loop aplicada
-if sys.platform == "win32":
-    current_policy = asyncio.get_event_loop_policy()
-    logger.info(
-        "Windows detectado. Event loop policy activa: %s. "
-        "ProactorEventLoop es requerido para soportar asyncio.subprocess.",
-        type(current_policy).__name__,
-    )
+logger.info(
+    "Event loop policy configurada: platform=%s, policy=%s. "
+    "Esta política es necesaria para soportar asyncio.subprocess "
+    "(requerido por el engine OmniVoice).",
+    sys.platform,
+    _EVENT_LOOP_POLICY_NAME,
+)
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI

@@ -49,6 +49,44 @@ def _log_subprocess_context(operation: str, cmd: list[str]) -> None:
     )
 
 
+def _log_subprocess_not_implemented(operation: str, cmd: list[str], error: Exception) -> None:
+    """
+    Log detallado cuando asyncio.create_subprocess_exec lanza NotImplementedError.
+
+    Esto ocurre típicamente en Windows cuando el event loop activo es
+    SelectorEventLoop (que no soporta subprocess_exec). La solución es
+    instalar WindowsProactorEventLoopPolicy al inicio de la app.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        loop_class = type(loop).__name__
+        is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
+        is_selector = isinstance(loop, asyncio.SelectorEventLoop)
+    except RuntimeError:
+        loop_class = "NO_RUNNING_LOOP"
+        is_proactor = False
+        is_selector = False
+
+    current_policy = asyncio.get_event_loop_policy()
+    policy_class = type(current_policy).__name__
+
+    logger.error(
+        "NotImplementedError al crear subproceso. "
+        "operation=%s, cmd=%s, error=%s. "
+        "Diagnóstico: platform=%s, thread=%s, "
+        "running_loop_class=%s, is_proactor=%s, is_selector=%s, "
+        "active_policy_class=%s. "
+        "Causa probable: el event loop activo no soporta asyncio.subprocess. "
+        "Solución: en Windows se debe instalar WindowsProactorEventLoopPolicy "
+        "antes de crear el loop (típicamente en el entrypoint de la app). "
+        "Ejemplo: asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())",
+        operation, cmd, error,
+        sys.platform, threading.current_thread().name,
+        loop_class, is_proactor, is_selector,
+        policy_class,
+    )
+
+
 class OmniVoiceEngineInterface(Protocol):
     """Protocolo para el motor de síntesis (facilita mocking en tests)."""
 
@@ -175,13 +213,10 @@ class OmniVoiceEngine:
             # Caso específico: el event loop activo no soporta subprocess_exec
             # (típico en Windows con SelectorEventLoop o cuando se invoca desde
             # un thread que no es el principal).
-            logger.error(
-                "NotImplementedError al inicializar motor real. Esto suele indicar "
-                "que el event loop activo no soporta asyncio.subprocess. "
-                "En Windows, asegúrate de usar WindowsProactorEventLoopPolicy. "
-                "platform=%s, thread=%s",
-                sys.platform,
-                threading.current_thread().name,
+            _log_subprocess_not_implemented(
+                operation="initialize._validate_real_engine_environment",
+                cmd=[],
+                error=e,
             )
             raise EngineUnavailableError(
                 f"Event loop no soporta subprocess_exec (NotImplementedError). "
@@ -233,10 +268,10 @@ class OmniVoiceEngine:
                     f"Python del venv OmniVoice no ejecutable (rc={proc.returncode}): {version_line}"
                 )
         except NotImplementedError as e:
-            logger.error(
-                "NotImplementedError creando subproceso para validar python. "
-                "cmd=%s. Esto indica que el event loop no soporta subprocess_exec.",
-                cmd,
+            _log_subprocess_not_implemented(
+                operation="validate_python_version",
+                cmd=cmd,
+                error=e,
             )
             raise EngineUnavailableError(
                 f"Event loop no soporta subprocess_exec al validar python del venv. "
@@ -322,9 +357,10 @@ class OmniVoiceEngine:
                     stderr.decode(errors="replace").strip()[:500],
                 )
         except NotImplementedError as e:
-            logger.error(
-                "NotImplementedError en warmup del CLI OmniVoice. "
-                "El event loop activo no soporta subprocess_exec."
+            _log_subprocess_not_implemented(
+                operation="warmup_cli_health",
+                cmd=cmd,
+                error=e,
             )
             # No bloqueante: solo warning
             logger.warning("Warmup omitido por NotImplementedError: %s", e)
@@ -433,11 +469,10 @@ class OmniVoiceEngine:
             return wav_bytes
 
         except NotImplementedError as e:
-            logger.error(
-                "NotImplementedError invocando CLI OmniVoice. "
-                "El event loop activo no soporta subprocess_exec. "
-                "op=%s, cmd=%s",
-                operation, cmd,
+            _log_subprocess_not_implemented(
+                operation=operation,
+                cmd=cmd,
+                error=e,
             )
             raise EngineUnavailableError(
                 f"Event loop no soporta subprocess_exec al invocar CLI OmniVoice. "
