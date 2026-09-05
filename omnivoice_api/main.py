@@ -38,6 +38,27 @@ logger.info(
     _EVENT_LOOP_POLICY_NAME,
 )
 
+
+def _force_proactor_loop_factory():
+    """
+    Devuelve un loop_factory que fuerza ProactorEventLoop en Windows.
+
+    Esto es necesario porque en algunas versiones de uvicorn, aunque se
+    haya instalado WindowsProactorEventLoopPolicy, uvicorn crea su propio
+    loop usando SelectorEventLoop. Este factory se pasa a uvicorn vía
+    `loop_factory=...` para garantizar que el loop creado sea Proactor.
+
+    En Linux/Unix devuelve None (uvicorn usa el default).
+    """
+    if sys.platform == "win32":
+        logger.info(
+            "Proporcionando loop_factory para forzar ProactorEventLoop en Windows. "
+            "Esto es necesario porque uvicorn puede ignorar la policy global."
+        )
+        return asyncio.ProactorEventLoop
+    return None
+
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -50,6 +71,30 @@ from omnivoice_api.api.v1 import voices, tts
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Verificación defensiva del event loop al arrancar.
+    # Si por algún motivo el loop activo no soporta subprocess (p.ej. uvicorn
+    # ignoró la policy global), lo detectamos aquí y lo logueamos claramente.
+    try:
+        current_loop = asyncio.get_running_loop()
+        loop_class = type(current_loop).__name__
+        is_proactor = isinstance(current_loop, asyncio.ProactorEventLoop)
+        is_selector = isinstance(current_loop, asyncio.SelectorEventLoop)
+        logger.info(
+            "Lifespan startup: loop activo class=%s, is_proactor=%s, is_selector=%s, platform=%s",
+            loop_class, is_proactor, is_selector, sys.platform,
+        )
+        if sys.platform == "win32" and not is_proactor:
+            logger.error(
+                "ATENCIÓN: en Windows se requiere ProactorEventLoop para asyncio.subprocess, "
+                "pero el loop activo es %s. Las llamadas al engine OmniVoice fallarán con "
+                "NotImplementedError. Asegúrate de ejecutar con: "
+                "uvicorn omnivoice_api.main:app --loop asyncio --loop-factory=proactor "
+                "o usa el helper _force_proactor_loop_factory().",
+                loop_class,
+            )
+    except RuntimeError:
+        pass
+
     # Startup
     logger.info("Application startup: inicializando engine OmniVoice...")
     try:

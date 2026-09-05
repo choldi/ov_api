@@ -27,6 +27,47 @@ from omnivoice_api.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 
+def _ensure_subprocess_capable_loop() -> None:
+    """
+    Verifica que el event loop activo soporte asyncio.subprocess.
+
+    En Windows, asyncio.subprocess solo funciona con ProactorEventLoop.
+    Si el loop activo es SelectorEventLoop (o cualquier loop que no soporte
+    subprocess), las llamadas a asyncio.create_subprocess_exec lanzarán
+    NotImplementedError.
+
+    Esta función es defensiva: si detecta el problema, lo loguea con
+    contexto suficiente para diagnosticar. No modifica el loop activo
+    (eso debe hacerse en el entrypoint antes de crear el loop).
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No hay loop activo (puede pasar en código sync). No podemos
+        # verificar nada aquí; el caller deberá crear el loop adecuado.
+        logger.debug(
+            "_ensure_subprocess_capable_loop: no hay running loop activo. "
+            "El caller es responsable de crear un loop compatible con subprocess."
+        )
+        return
+
+    loop_class = type(loop).__name__
+    is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
+    is_selector = isinstance(loop, asyncio.SelectorEventLoop)
+
+    if sys.platform == "win32" and not is_proactor:
+        logger.error(
+            "Event loop incompatible con asyncio.subprocess en Windows. "
+            "loop_class=%s, is_proactor=%s, is_selector=%s. "
+            "SOLUCIÓN: ejecuta la app con ProactorEventLoop. "
+            "Opciones: (1) asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy()) "
+            "en el entrypoint, (2) uvicorn con --loop asyncio y loop_factory que devuelva "
+            "asyncio.ProactorEventLoop, (3) crear el loop manualmente con "
+            "asyncio.new_event_loop() y asyncio.ProactorEventLoop() antes de iniciar uvicorn.",
+            loop_class, is_proactor, is_selector,
+        )
+
+
 def _log_subprocess_context(operation: str, cmd: list[str]) -> None:
     """Log de diagnóstico del contexto donde se va a crear un subproceso."""
     try:
@@ -230,6 +271,9 @@ class OmniVoiceEngine:
 
     async def _validate_real_engine_environment(self) -> None:
         """Valida que el entorno para invocar el motor real está disponible."""
+        # Verificación defensiva del event loop antes de invocar subprocess.
+        _ensure_subprocess_capable_loop()
+
         python_bin = self._settings.python_bin
         if not python_bin.exists():
             raise EngineUnavailableError(
@@ -385,6 +429,9 @@ class OmniVoiceEngine:
 
         Si el CLI no está disponible o falla, se lanza EngineUnavailableError.
         """
+        # Verificación defensiva del event loop antes de invocar subprocess.
+        _ensure_subprocess_capable_loop()
+
         python_bin = self._settings.python_bin
         cli_entry = self._settings.OMNIVOICE_CLI_ENTRY
 
