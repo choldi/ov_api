@@ -5,12 +5,12 @@ import logging
 import sys
 
 # --- Configuración del Event Loop Policy ---
+# DEBE ejecutarse ANTES de que uvicorn cree el event loop.
 # En Windows, el SelectorEventLoop (default de uvicorn) NO soporta subprocesses
 # (asyncio.create_subprocess_exec -> NotImplementedError). El engine invoca el
 # CLI de OmniVoice vía subprocess, por lo que forzamos ProactorEventLoop.
 # En Linux/Unix, el SelectorEventLoop por defecto sí soporta subprocess_exec,
 # pero lo fijamos explícitamente para tener un comportamiento determinista.
-# Debe ejecutarse ANTES de que uvicorn cree el event loop.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     _EVENT_LOOP_POLICY_NAME = "WindowsProactorEventLoopPolicy"
@@ -59,6 +59,11 @@ def _force_proactor_loop_factory():
     return None
 
 
+# Exportar el factory para que uvicorn pueda usarlo:
+# uvicorn omnivoice_api.main:app --loop-factory=omnivoice_api.main:_force_proactor_loop_factory
+loop_factory = _force_proactor_loop_factory()
+
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -88,7 +93,7 @@ async def lifespan(app: FastAPI):
                 "ATENCIÓN: en Windows se requiere ProactorEventLoop para asyncio.subprocess, "
                 "pero el loop activo es %s. Las llamadas al engine OmniVoice fallarán con "
                 "NotImplementedError. Asegúrate de ejecutar con: "
-                "uvicorn omnivoice_api.main:app --loop asyncio --loop-factory=proactor "
+                "uvicorn omnivoice_api.main:app --loop-factory=omnivoice_api.main:_force_proactor_loop_factory "
                 "o usa el helper _force_proactor_loop_factory().",
                 loop_class,
             )
