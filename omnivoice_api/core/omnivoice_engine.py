@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import struct
+import io
+import wave
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Protocol, Any
@@ -96,19 +100,19 @@ class OmniVoiceEngine:
     async def initialize(self) -> None:
         """Inicializa el modelo (carga pesos, warm-up)."""
         if self._model is not None:
-            print(f"[DEBUG] Engine already initialized, _model is not None: {self._model is not None}")
+            logger.debug("Engine already initialized, _model is not None: %s", self._model is not None)
             return
 
-        print(f"[DEBUG] Initializing engine...")
+        logger.info("Initializing OmniVoice engine...")
         self._settings = get_settings()
-        print(f"[DEBUG] Settings INSTALL_DIR: {self._settings.OMNIVOICE_INSTALL_DIR}")
-        print(f"[DEBUG] Settings VENV_DIR: {self._settings.OMNIVOICE_VENV_DIR}")
-        print(f"[DEBUG] Settings MODEL_PATH: {self._settings.OMNIVOICE_MODEL_PATH}")
-        print(f"[DEBUG] Settings model_path property: {self._settings.model_path}")
-        print(f"[DEBUG] Settings python_bin property: {self._settings.python_bin}")
+        logger.debug("Settings INSTALL_DIR: %s", self._settings.OMNIVOICE_INSTALL_DIR)
+        logger.debug("Settings VENV_DIR: %s", self._settings.OMNIVOICE_VENV_DIR)
+        logger.debug("Settings MODEL_PATH: %s", self._settings.OMNIVOICE_MODEL_PATH)
+        logger.debug("Settings model_path property: %s", self._settings.model_path)
+        logger.debug("Settings python_bin property: %s", self._settings.python_bin)
 
         self._device = self._settings.OMNIVOICE_DEVICE
-        print(f"[DEBUG] Device set to: {self._device}")
+        logger.info("Device set to: %s", self._device)
         
         logger.info("Cargando modelo OmniVoice en %s...", self._device)
         try:
@@ -121,10 +125,10 @@ class OmniVoiceEngine:
             self._stock_voices = self._get_mock_stock_voices()
             await self.warmup()
             logger.info("Modelo OmniVoice cargado correctamente")
-            print(f"[DEBUG] Engine initialized successfully, _model is not None: {self._model is not None}")
+            logger.debug("Engine initialized successfully, _model is not None: %s", self._model is not None)
         except Exception as e:
             logger.exception("Error cargando modelo OmniVoice")
-            print(f"[DEBUG] Error initializing engine: {e}")
+            logger.debug("Error initializing engine: %s", e)
             raise EngineUnavailableError(f"Failed to load OmniVoice model: {e}") from e
 
     def _get_mock_stock_voices(self) -> list[dict]:
@@ -158,6 +162,7 @@ class OmniVoiceEngine:
         """Ejecuta una síntesis de prueba para calentar el modelo."""
         if self._model is None:
             # Mock warmup
+            logger.debug("Mock warmup: sleeping 10ms")
             await asyncio.sleep(0.01)
             return
 
@@ -175,18 +180,28 @@ class OmniVoiceEngine:
         intensity: float | None = None,
     ) -> bytes:
         """Sintetiza con voz stock."""
+        logger.debug(
+            "synthesize_stock called: text_len=%d, voice_id=%s, language=%s, speed=%.2f, emotion=%s, intensity=%s",
+            len(text), voice_id, language, speed, emotion, intensity
+        )
+
         # Validar voz
         voice = next((v for v in self._stock_voices if v["voice_id"] == voice_id), None)
         if not voice:
+            logger.error("Voice not found: voice_id=%s, available=%d", voice_id, len(self._stock_voices))
             raise VoiceNotFoundError(voice_id, "stock")
 
         # Validar idioma
         if language not in self._languages:
+            logger.error("Unsupported language: %s, supported=%s", language, self._languages)
             raise UnsupportedLanguageError(language, self._languages)
 
         # Validar emoción
         if emotion and emotion not in self._emotions:
+            logger.error("Unsupported emotion: %s, supported=%s", emotion, self._emotions)
             raise UnsupportedEmotionError(emotion, self._emotions)
+
+        logger.info("Starting synthesis: voice_id=%s, language=%s, text='%s...'", voice_id, language, text[:50])
 
         async with self._semaphore:
             # TODO: Síntesis real con OmniVoice
@@ -199,10 +214,20 @@ class OmniVoiceEngine:
             #     emotion=emotion,
             #     intensity=intensity,
             # )
+            # logger.debug("Real synthesis completed, wav_bytes=%d", len(wav_bytes))
             # return wav_bytes
 
-            # Mock: generar WAV silencioso válido
-            return self._generate_mock_wav(duration_sec=len(text) * 0.1)
+            # MOCK: Generar tono de prueba audible (440Hz) en lugar de silencio
+            # Esto permite validar el pipeline de audio completo
+            logger.warning("USING MOCK SYNTHESIS - generating test tone (440Hz) instead of real OmniVoice output")
+            wav_bytes = self._generate_test_tone_wav(
+                duration_sec=max(0.5, len(text) * 0.08),  # ~80ms por caracter, mínimo 0.5s
+                sample_rate=22050,
+                frequency=440.0,  # La4
+                amplitude=0.3
+            )
+            logger.info("Mock synthesis completed: wav_bytes=%d, duration=%.2fs", len(wav_bytes), len(text) * 0.08)
+            return wav_bytes
 
     async def synthesize_clone(
         self,
@@ -214,27 +239,32 @@ class OmniVoiceEngine:
         intensity: float | None = None,
     ) -> bytes:
         """Sintetiza con voz clonada."""
+        logger.debug(
+            "synthesize_clone called: text_len=%d, ref_path=%s, language=%s, emotion=%s, intensity=%s",
+            len(text), reference_audio_path, language, emotion, intensity
+        )
+
         # Validar idioma
         if language not in self._languages:
+            logger.error("Unsupported language: %s, supported=%s", language, self._languages)
             raise UnsupportedLanguageError(language, self._languages)
 
         # Validar emoción
         if emotion and emotion not in self._emotions:
+            logger.error("Unsupported emotion: %s, supported=%s", emotion, self._emotions)
             raise UnsupportedEmotionError(emotion, self._emotions)
 
-        # Procesar ruta de audio de referencia (para mock, solo verificamos que exista)
-        # En una implementación real, extraeríamos el embedding del audio de referencia
-        # y lo almacenaríamos en self._voice_cache
+        # Procesar ruta de audio de referencia
         import os
         if not os.path.exists(reference_audio_path):
-            # En lugar de fallar, para desarrollo podemos generar un mock
-            # En producción, esto debería fallar apropiadamente
             logger.warning(
-                f"Reference audio not found: {reference_audio_path}. "
-                "Using mock embedding for development."
+                "Reference audio not found: %s. Using mock embedding for development.",
+                reference_audio_path
             )
-            # Crear un path temporal para el mock
             reference_audio_path = "/tmp/mock-reference.wav"
+
+        logger.info("Starting clone synthesis: ref_path=%s, language=%s, text='%s...'", 
+                    reference_audio_path, language, text[:50])
 
         async with self._semaphore:
             # TODO: Síntesis real con OmniVoice usando embedding de voz clonada
@@ -249,53 +279,110 @@ class OmniVoiceEngine:
             #     intensity=intensity,
             # )
             
-            # Mock: generar WAV silencioso válido (similar a synthesize_stock)
-            return self._generate_mock_wav(duration_sec=len(text) * 0.1)
+            # MOCK: Generar tono de prueba audible (distinto al stock para diferenciar)
+            logger.warning("USING MOCK CLONE SYNTHESIS - generating test tone (880Hz) instead of real OmniVoice output")
+            wav_bytes = self._generate_test_tone_wav(
+                duration_sec=max(0.5, len(text) * 0.08),
+                sample_rate=22050,
+                frequency=880.0,  # La5 (octava arriba para diferenciar)
+                amplitude=0.3
+            )
+            logger.info("Mock clone synthesis completed: wav_bytes=%d", len(wav_bytes))
+            return wav_bytes
 
     async def list_stock_voices(self, language: str | None = None) -> list[dict]:
         """Lista voces stock, opcionalmente filtradas por idioma."""
         voices = self._stock_voices
         if language:
             voices = [v for v in voices if v["language"] == language]
+        logger.debug("list_stock_voices: language=%s, count=%d", language, len(voices))
         return voices
 
     async def list_emotions(self) -> list[str]:
         """Lista emociones soportadas."""
+        logger.debug("list_emotions: %s", self._emotions)
         return self._emotions.copy()
 
     async def health_check(self) -> dict:
         """Comprueba estado del motor."""
-        # Importación perezosa: torch solo se necesita si se quiere
-        # comprobar disponibilidad de GPU. El proyecto NO depende de torch
-        # (OmniVoice se consume desde una instalación externa).
         try:
             import torch  # type: ignore[import-not-found]
-
             gpu_available = torch.cuda.is_available()
+            vram_free_mb = 0
+            if gpu_available:
+                vram_free_mb = torch.cuda.mem_get_info()[0] // (1024 * 1024)
         except ImportError:
             gpu_available = False
+            vram_free_mb = 0
 
-        return {
+        health = {
             "model_loaded": self._model is not None,
             "gpu_available": gpu_available,
             "device": self._device,
             "stock_voices_count": len(self._stock_voices),
+            "vram_free_mb": vram_free_mb,
         }
+        logger.debug("health_check: %s", health)
+        return health
 
     def _generate_mock_wav(self, duration_sec: float = 1.0, sample_rate: int = 22050) -> bytes:
-        """Genera un WAV válido silencioso para testing."""
-        import io
-        import wave
-
+        """Genera un WAV válido silencioso para testing (MANTENIDO PARA COMPATIBILIDAD)."""
         num_samples = int(duration_sec * sample_rate)
-        # WAV header + silence (16-bit PCM)
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(b"\x00\x00" * num_samples)
+        return buffer.getvalue()
+
+    def _generate_test_tone_wav(
+        self, 
+        duration_sec: float = 1.0, 
+        sample_rate: int = 22050, 
+        frequency: float = 440.0,
+        amplitude: float = 0.3
+    ) -> bytes:
+        """
+        Genera un WAV con un tono senoidal audible para testing.
+        
+        Args:
+            duration_sec: Duración en segundos
+            sample_rate: Frecuencia de muestreo (Hz)
+            frequency: Frecuencia del tono (Hz)
+            amplitude: Amplitud 0.0-1.0
+            
+        Returns:
+            Bytes del archivo WAV
+        """
+        num_samples = int(duration_sec * sample_rate)
+        max_amplitude = 32767  # 16-bit signed max
+        
+        # Generar muestras de onda senoidal
+        samples = []
+        for i in range(num_samples):
+            t = i / sample_rate
+            value = amplitude * math.sin(2 * math.pi * frequency * t)
+            # Convertir a 16-bit signed integer
+            sample = int(max_amplitude * value)
+            samples.append(struct.pack('<h', sample))  # little-endian signed short
+        
+        audio_data = b''.join(samples)
+        
+        # Escribir WAV
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
             wav_file.setnchannels(1)  # mono
             wav_file.setsampwidth(2)  # 16-bit
             wav_file.setframerate(sample_rate)
-            wav_file.writeframes(b"\x00\x00" * num_samples)
-        return buffer.getvalue()
+            wav_file.writeframes(audio_data)
+        
+        wav_bytes = buffer.getvalue()
+        logger.debug(
+            "Generated test tone: duration=%.2fs, freq=%.1fHz, amp=%.2f, samples=%d, bytes=%d",
+            duration_sec, frequency, amplitude, num_samples, len(wav_bytes)
+        )
+        return wav_bytes
 
 
 # Función de conveniencia para obtener la instancia singleton
@@ -306,8 +393,11 @@ async def get_engine() -> OmniVoiceEngine:
     """Obtiene la instancia singleton del motor (inicializada)."""
     global _engine_instance
     if _engine_instance is None:
+        logger.debug("Creating new OmniVoiceEngine instance")
         _engine_instance = OmniVoiceEngine()
         await _engine_instance.initialize()
+    else:
+        logger.debug("Returning existing OmniVoiceEngine instance")
     return _engine_instance
 
 
@@ -315,5 +405,6 @@ async def close_engine() -> None:
     """Cierra el motor (cleanup)."""
     global _engine_instance
     if _engine_instance is not None:
+        logger.info("Closing OmniVoice engine")
         # TODO: cleanup real si es necesario
         _engine_instance = None

@@ -68,6 +68,107 @@ def _parse_wav_header(wav_bytes: bytes) -> tuple[int, float]:
     return sample_rate, duration_sec
 
 
+def _validate_wav_audio(wav_bytes: bytes) -> dict:
+    """
+    Valida un WAV y devuelve información detallada para debugging.
+    
+    Returns:
+        Dict con: valid, sample_rate, duration_sec, num_channels, bits_per_sample, 
+                  rms_amplitude, peak_amplitude, is_silent
+    """
+    result = {
+        "valid": False,
+        "sample_rate": 0,
+        "duration_sec": 0.0,
+        "num_channels": 0,
+        "bits_per_sample": 0,
+        "rms_amplitude": 0.0,
+        "peak_amplitude": 0.0,
+        "is_silent": True,
+        "error": None
+    }
+    
+    if len(wav_bytes) < 44:
+        result["error"] = "WAV too small (< 44 bytes header)"
+        return result
+    
+    try:
+        # Parsear header WAV
+        riff = wav_bytes[0:4]
+        if riff != b'RIFF':
+            result["error"] = f"Invalid RIFF header: {riff}"
+            return result
+            
+        wave_fmt = wav_bytes[8:12]
+        if wave_fmt != b'WAVE':
+            result["error"] = f"Invalid WAVE format: {wave_fmt}"
+            return result
+        
+        # Buscar chunk 'fmt '
+        fmt_pos = wav_bytes.find(b'fmt ')
+        if fmt_pos == -1:
+            result["error"] = "fmt chunk not found"
+            return result
+            
+        fmt_size = int.from_bytes(wav_bytes[fmt_pos+4:fmt_pos+8], byteorder='little')
+        if fmt_size < 16:
+            result["error"] = f"fmt chunk too small: {fmt_size}"
+            return result
+            
+        audio_format = int.from_bytes(wav_bytes[fmt_pos+8:fmt_pos+10], byteorder='little')
+        num_channels = int.from_bytes(wav_bytes[fmt_pos+10:fmt_pos+12], byteorder='little')
+        sample_rate = int.from_bytes(wav_bytes[fmt_pos+12:fmt_pos+16], byteorder='little')
+        byte_rate = int.from_bytes(wav_bytes[fmt_pos+16:fmt_pos+20], byteorder='little')
+        block_align = int.from_bytes(wav_bytes[fmt_pos+20:fmt_pos+22], byteorder='little')
+        bits_per_sample = int.from_bytes(wav_bytes[fmt_pos+22:fmt_pos+24], byteorder='little')
+        
+        # Buscar chunk 'data'
+        data_pos = wav_bytes.find(b'data', fmt_pos + 8 + fmt_size)
+        if data_pos == -1:
+            result["error"] = "data chunk not found"
+            return result
+            
+        data_size = int.from_bytes(wav_bytes[data_pos+4:data_pos+8], byteorder='little')
+        audio_data = wav_bytes[data_pos+8:data_pos+8+data_size]
+        
+        if len(audio_data) != data_size:
+            result["error"] = f"Data size mismatch: expected {data_size}, got {len(audio_data)}"
+            return result
+        
+        # Calcular estadísticas de audio (asumiendo 16-bit PCM)
+        if bits_per_sample == 16 and num_channels == 1:
+            import struct
+            num_samples = len(audio_data) // 2
+            if num_samples > 0:
+                # Desempaquetar muestras
+                fmt_str = f'<{num_samples}h'
+                samples = struct.unpack(fmt_str, audio_data)
+                
+                # RMS y peak
+                sum_squares = sum(s * s for s in samples)
+                rms = (sum_squares / num_samples) ** 0.5
+                peak = max(abs(s) for s in samples)
+                
+                result["rms_amplitude"] = rms / 32767.0  # Normalizado 0-1
+                result["peak_amplitude"] = peak / 32767.0
+                result["is_silent"] = rms < 100  # Umbral arbitrario
+        
+        duration_sec = data_size / byte_rate if byte_rate > 0 else 0.0
+        
+        result.update({
+            "valid": True,
+            "sample_rate": sample_rate,
+            "duration_sec": duration_sec,
+            "num_channels": num_channels,
+            "bits_per_sample": bits_per_sample,
+        })
+        
+    except Exception as e:
+        result["error"] = f"Parse error: {e}"
+    
+    return result
+
+
 class OmniVoiceEngineClient:
     """Cliente de alto nivel para el motor OmniVoice usado por los servicios."""
 
@@ -173,7 +274,7 @@ class OmniVoiceEngineClient:
             intensity=intensity,
         )
 
-        log.info("engine_sending_to_omnivoice")
+        log.info("engine_sending_to_omnivoice", text_preview=text[:100])
         start_time = time.perf_counter()
 
         try:
@@ -191,19 +292,40 @@ class OmniVoiceEngineClient:
                 "engine_generation_failed",
                 elapsed_sec=elapsed,
                 error=str(e),
+                error_type=type(e).__name__,
             )
             raise
 
         elapsed = time.perf_counter() - start_time
-        sample_rate, duration_sec = _parse_wav_header(wav_bytes)
-
+        
+        # Validación detallada del audio generado
+        validation = _validate_wav_audio(wav_bytes)
+        sample_rate = validation["sample_rate"]
+        duration_sec = validation["duration_sec"]
+        
         log.info(
             "engine_generation_completed",
             elapsed_sec=elapsed,
             duration_sec=duration_sec,
             sample_rate=sample_rate,
             audio_bytes=len(wav_bytes),
+            validation=validation,
         )
+        
+        # Log de advertencia si el audio parece silencioso
+        if validation["is_silent"]:
+            log.warning(
+                "GENERATED AUDIO APPEARS SILENT",
+                rms=validation["rms_amplitude"],
+                peak=validation["peak_amplitude"],
+                is_silent=validation["is_silent"],
+            )
+        else:
+            log.info(
+                "Audio validation OK",
+                rms=validation["rms_amplitude"],
+                peak=validation["peak_amplitude"],
+            )
 
         return AudioResult(
             wav_bytes=wav_bytes,
@@ -236,7 +358,7 @@ class OmniVoiceEngineClient:
             intensity=intensity,
         )
 
-        log.info("engine_sending_to_omnivoice")
+        log.info("engine_sending_to_omnivoice", text_preview=text[:100])
         start_time = time.perf_counter()
 
         try:
@@ -253,19 +375,40 @@ class OmniVoiceEngineClient:
                 "engine_generation_failed",
                 elapsed_sec=elapsed,
                 error=str(e),
+                error_type=type(e).__name__,
             )
             raise
 
         elapsed = time.perf_counter() - start_time
-        sample_rate, duration_sec = _parse_wav_header(wav_bytes)
-
+        
+        # Validación detallada del audio generado
+        validation = _validate_wav_audio(wav_bytes)
+        sample_rate = validation["sample_rate"]
+        duration_sec = validation["duration_sec"]
+        
         log.info(
             "engine_generation_completed",
             elapsed_sec=elapsed,
             duration_sec=duration_sec,
             sample_rate=sample_rate,
             audio_bytes=len(wav_bytes),
+            validation=validation,
         )
+        
+        # Log de advertencia si el audio parece silencioso
+        if validation["is_silent"]:
+            log.warning(
+                "GENERATED AUDIO APPEARS SILENT",
+                rms=validation["rms_amplitude"],
+                peak=validation["peak_amplitude"],
+                is_silent=validation["is_silent"],
+            )
+        else:
+            log.info(
+                "Audio validation OK",
+                rms=validation["rms_amplitude"],
+                peak=validation["peak_amplitude"],
+            )
 
         return AudioResult(
             wav_bytes=wav_bytes,
