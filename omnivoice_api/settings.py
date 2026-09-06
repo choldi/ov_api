@@ -24,7 +24,12 @@ class Settings(BaseSettings):
     OMNIVOICE_VENV_DIR: Path
     OMNIVOICE_PATH: Path
     OMNIVOICE_MODEL_PATH: Path | None = None
-    OMNIVOICE_CLI_ENTRY: str = "omnivoice_cli.__main__"
+    # Nombre del módulo CLI a invocar dentro del venv externo.
+    # El paquete real de OmniVoice (k2-fsa) se llama ``omnivoice.cli``.
+    # Se puede sobreescribir vía env OMNIVOICE_CLI_MODULE si en el futuro
+    # cambia el nombre del paquete.
+    OMNIVOICE_CLI_MODULE: str = "omnivoice.cli"
+    OMNIVOICE_CLI_ENTRY: str = "omnivoice_cli.__main__"  # DEPRECATED: mantenido por compat
     OMNIVOICE_DEVICE: str = "cuda:0"
     OMNIVOICE_LANGUAGES: str = "es,en,zh,ja,ko,fr,de"
     MAX_REFERENCE_DURATION_SEC: int = 30

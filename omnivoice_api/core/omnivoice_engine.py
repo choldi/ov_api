@@ -300,6 +300,7 @@ class OmniVoiceEngine:
         logger.debug("Settings model_path property: %s", self._settings.model_path)
         logger.debug("Settings python_bin property: %s", self._settings.python_bin)
         logger.debug("Settings OMNIVOICE_USE_MOCK: %s", self._use_mock)
+        logger.debug("Settings OMNIVOICE_CLI_MODULE: %s", self._settings.OMNIVOICE_CLI_MODULE)
 
         self._device = self._settings.OMNIVOICE_DEVICE
         logger.info("Device set to: %s", self._device)
@@ -444,8 +445,8 @@ class OmniVoiceEngine:
         logger.info("Warmup del motor REAL: verificando CLI OmniVoice...")
         try:
             python_bin = self._settings.python_bin
-            cli_entry = self._settings.OMNIVOICE_CLI_ENTRY
-            cmd = [str(python_bin), "-m", cli_entry, "--health"]
+            cli_module = self._settings.OMNIVOICE_CLI_MODULE
+            cmd = [str(python_bin), "-m", cli_module, "--health"]
             _log_subprocess_context(operation="warmup_cli_health", cmd=cmd)
 
             returncode, stdout, stderr = await _run_subprocess_async(
@@ -477,6 +478,25 @@ class OmniVoiceEngine:
         except Exception as e:
             logger.warning("Warmup del motor real falló (no bloqueante): %s", e)
 
+    def _build_subprocess_env(self) -> dict[str, str]:
+        """Construye el env para el subprocess del CLI.
+
+        Añade PYTHONPATH apuntando al venv externo para que el paquete
+        ``omnivoice`` (k2-fsa) sea importable cuando se invoca con
+        ``python -m omnivoice.cli``.
+        """
+        env = os.environ.copy()
+        venv_dir = self._settings.OMNIVOICE_VENV_DIR
+        if venv_dir is not None:
+            venv_path = str(venv_dir)
+            # En Windows, los site-packages suelen estar en ``Lib\site-packages``.
+            # En Unix, en ``lib/pythonX.Y/site-packages``. Para máxima
+            # compatibilidad añadimos el propio venv_dir al PYTHONPATH;
+            # Python sabe resolver paquetes desde ahí si están bien instalados.
+            existing = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = venv_path + (os.pathsep + existing if existing else "")
+        return env
+
     async def _invoke_omnivoice_cli(
         self,
         *,
@@ -487,7 +507,7 @@ class OmniVoiceEngine:
         Invoca el CLI de OmniVoice en el venv externo y devuelve los WAV bytes.
 
         Contrato del CLI (esperado):
-          python -m omnivoice_cli.__main__ --op <operation> [--in <path>] [--out <path>]
+          python -m omnivoice.cli --op <operation> [--in <path>] [--out <path>]
         - Lee un JSON con los parámetros desde --in <path> (o stdin).
         - Escribe el WAV resultante en --out <path> (o stdout en binario).
 
@@ -497,7 +517,7 @@ class OmniVoiceEngine:
         _ensure_subprocess_capable_loop()
 
         python_bin = self._settings.python_bin
-        cli_entry = self._settings.OMNIVOICE_CLI_ENTRY
+        cli_module = self._settings.OMNIVOICE_CLI_MODULE
 
         # Escribir payload a archivo temporal (más robusto que stdin para payloads grandes)
         import tempfile
@@ -515,7 +535,7 @@ class OmniVoiceEngine:
         cmd = [
             str(python_bin),
             "-m",
-            cli_entry,
+            cli_module,
             "--op",
             operation,
             "--in",
@@ -524,11 +544,18 @@ class OmniVoiceEngine:
             out_path,
         ]
 
+        # cwd = raíz del venv para que ``python -m omnivoice.cli`` resuelva
+        # el paquete correctamente.
+        cwd = str(self._settings.OMNIVOICE_VENV_DIR)
+        env = self._build_subprocess_env()
+
         _log_subprocess_context(operation=operation, cmd=cmd)
         logger.info(
-            "Invocando CLI OmniVoice REAL: op=%s, cmd=%s",
+            "Invocando CLI OmniVoice REAL: op=%s, cmd=%s, cwd=%s, cli_module=%s",
             operation,
             " ".join(cmd),
+            cwd,
+            cli_module,
         )
 
         try:
@@ -777,6 +804,7 @@ class OmniVoiceEngine:
             "mode": "MOCK" if self._use_mock else "REAL",
             "python_bin": str(self._settings.python_bin),
             "model_path": str(self._settings.model_path),
+            "cli_module": self._settings.OMNIVOICE_CLI_MODULE,
         }
         logger.debug("health_check: %s", health)
         return health
