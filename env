@@ -10,21 +10,6 @@
 # Bloque 1 — Variables OBLIGATORIAS (sin valor por defecto útil en producción)
 # -----------------------------------------------------------------------------
 
-# Ruta al directorio de la instalación externa de OmniVoice (Path, str)
-# Ejemplo Windows: C:/tools/omnivoice
-# Ejemplo Linux:   /opt/omnivoice
-OMNIVOICE_INSTALL_DIR=C:/AI/TTS/OMNIVOICE/OMNIVOICE
-OMNIVOICE_PATH=C:/AI/TTS/OMNIVOICE/OMNIVOICE
-
-# Ruta al venv externo que contiene OmniVoice + CUDA (Path, str)
-# Ejemplo Windows: C:/tools/omnivoice/.venv
-# Ejemplo Linux:   /opt/omnivoice/.venv
-OMNIVOICE_VENV_DIR=C:/AI/TTS/OMNIVOICE/OMNIVOICE_ENV
-
-# Ruta al modelo de OmniVoice (Path, str)
-# Si se deja vacío, se deriva como: ${OMNIVOICE_INSTALL_DIR}/models
-OMNIVOICE_MODEL_PATH=
-
 # URL de conexión a la base de datos (str)
 # Por defecto usa SQLite local. Reservado para migrar a Postgres.
 # Ejemplo Postgres: postgresql+asyncpg://user:pass@localhost:5432/omnivoice
@@ -41,24 +26,33 @@ APP_VERSION=0.1.0
 DEBUG=false
 API_PREFIX=/api/v1
 
-# --- OmniVoice Engine ---
-# El engine invoca `python -m omnivoice.cli.infer` con el intérprete del
-# venv externo (OMNIVOICE_VENV_DIR). No hay variable configurable para el
-# módulo CLI: es fijo según el paquete omnivoice (k2-fsa).
-# Dispositivo de inferencia (str)
+# --- OmniVoice Engine (API Python) ---
+# ID del modelo a cargar con OmniVoice.from_pretrained(...).
+# Puede ser un ID de HuggingFace (ej. "k2-fsa/OmniVoice") o una ruta local.
+OMNIVOICE_MODEL_ID=k2-fsa/OmniVoice
+# Dispositivo PyTorch para inferencia (str)
+# Valores: "cuda:0", "cpu", "mps", "xpu"
 OMNIVOICE_DEVICE=cuda:0
+# Dtype del modelo (str)
+# Valores: "float16", "float32", "bfloat16"
+OMNIVOICE_DTYPE=float16
+# Si True, hace una síntesis de prueba al arrancar (puede ser lento).
+# Por defecto False para acelerar el arranque.
+OMNIVOICE_WARMUP_ON_START=false
 # Lista de códigos de idioma ISO 639-1 soportados (list[str], separados por coma)
 OMNIVOICE_LANGUAGES=es,en,zh,ja,ko,fr,de
-# Módulo CLI de OmniVoice para invocar como `python -m <module>`
-OMNIVOICE_CLI_MODULE=omnivoice.cli.infer
 # Duración máxima permitida para audio de referencia en segundos (int)
 MAX_REFERENCE_DURATION_SEC=30
 # Número máximo de síntesis simultáneas (int). P2000 = 1
 ENGINE_CONCURRENCY=1
-# Timeout para el arranque del subprocess del engine en segundos (int)
-ENGINE_STARTUP_TIMEOUT_SEC=30
 # Timeout por petición al engine en segundos (int)
 ENGINE_REQUEST_TIMEOUT_SEC=120
+
+# --- Mock / Real engine toggle ---
+# Si True, usa generación de tonos mock (útil para tests sin GPU/modelo).
+# Si False (por defecto), usa la API Python de OmniVoice directamente
+# (`from omnivoice import OmniVoice`).
+OMNIVOICE_USE_MOCK=false
 
 # --- Storage ---
 STORAGE_BASE_PATH=storage
