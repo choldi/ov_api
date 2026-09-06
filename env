@@ -25,11 +25,6 @@ OMNIVOICE_VENV_DIR=C:/AI/TTS/OMNIVOICE/OMNIVOICE_ENV
 # Si se deja vacío, se deriva como: ${OMNIVOICE_INSTALL_DIR}/models
 OMNIVOICE_MODEL_PATH=
 
-# Módulo CLI a invocar dentro del venv externo (str).
-# El paquete real de OmniVoice (k2-fsa) se llama ``omnivoice.cli``.
-# Si tu instalación usa otro nombre, sobreescríbelo aquí.
-OMNIVOICE_CLI_MODULE=omnivoice.cli
-
 # URL de conexión a la base de datos (str)
 # Por defecto usa SQLite local. Reservado para migrar a Postgres.
 # Ejemplo Postgres: postgresql+asyncpg://user:pass@localhost:5432/omnivoice
@@ -47,9 +42,9 @@ DEBUG=false
 API_PREFIX=/api/v1
 
 # --- OmniVoice Engine ---
-# Módulo CLI ejecutable dentro del venv externo (str)
-# DEPRECATED: usar OMNIVOICE_CLI_MODULE. Se mantiene por compatibilidad.
-OMNIVOICE_CLI_ENTRY=omnivoice_cli.__main__
+# El engine invoca `python -m omnivoice.cli.infer` con el intérprete del
+# venv externo (OMNIVOICE_VENV_DIR). No hay variable configurable para el
+# módulo CLI: es fijo según el paquete omnivoice (k2-fsa).
 # Dispositivo de inferencia (str)
 OMNIVOICE_DEVICE=cuda:0
 # Lista de códigos de idioma ISO 639-1 soportados (list[str], separados por coma)

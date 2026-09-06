@@ -24,12 +24,6 @@ class Settings(BaseSettings):
     OMNIVOICE_VENV_DIR: Path
     OMNIVOICE_PATH: Path
     OMNIVOICE_MODEL_PATH: Path | None = None
-    # Nombre del módulo CLI a invocar dentro del venv externo.
-    # El paquete real de OmniVoice (k2-fsa) se llama ``omnivoice.cli``.
-    # Se puede sobreescribir vía env OMNIVOICE_CLI_MODULE si en el futuro
-    # cambia el nombre del paquete.
-    OMNIVOICE_CLI_MODULE: str = "omnivoice.cli"
-    OMNIVOICE_CLI_ENTRY: str = "omnivoice_cli.__main__"  # DEPRECATED: mantenido por compat
     OMNIVOICE_DEVICE: str = "cuda:0"
     OMNIVOICE_LANGUAGES: str = "es,en,zh,ja,ko,fr,de"
     MAX_REFERENCE_DURATION_SEC: int = 30
@@ -39,7 +33,8 @@ class Settings(BaseSettings):
 
     # --- Mock / Real engine toggle ---
     # Si True, usa generación de tonos mock (útil para tests sin GPU/modelo).
-    # Si False (por defecto), llama al motor OmniVoice real vía subprocess.
+    # Si False (por defecto), llama al motor OmniVoice real vía subprocess
+    # (`python -m omnivoice.cli.infer` dentro del venv externo).
     OMNIVOICE_USE_MOCK: bool = False
 
     # --- Database ---
