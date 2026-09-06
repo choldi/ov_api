@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     OMNIVOICE_MODEL_PATH: Path | None = None
     OMNIVOICE_DEVICE: str = "cuda:0"
     OMNIVOICE_LANGUAGES: str = "es,en,zh,ja,ko,fr,de"
+    OMNIVOICE_CLI_MODULE: str = "omnivoice.cli.infer"
     MAX_REFERENCE_DURATION_SEC: int = 30
     ENGINE_CONCURRENCY: int = 1
     ENGINE_STARTUP_TIMEOUT_SEC: int = 30

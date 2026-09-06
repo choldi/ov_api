@@ -49,6 +49,8 @@ API_PREFIX=/api/v1
 OMNIVOICE_DEVICE=cuda:0
 # Lista de códigos de idioma ISO 639-1 soportados (list[str], separados por coma)
 OMNIVOICE_LANGUAGES=es,en,zh,ja,ko,fr,de
+# Módulo CLI de OmniVoice para invocar como `python -m <module>`
+OMNIVOICE_CLI_MODULE=omnivoice.cli.infer
 # Duración máxima permitida para audio de referencia en segundos (int)
 MAX_REFERENCE_DURATION_SEC=30
 # Número máximo de síntesis simultáneas (int). P2000 = 1
