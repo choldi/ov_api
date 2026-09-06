@@ -9,19 +9,13 @@ import sys
 # En Windows, el SelectorEventLoop (default de uvicorn) NO soporta subprocesses
 # (asyncio.create_subprocess_exec -> NotImplementedError). El engine invoca el
 # CLI de OmniVoice vía subprocess, por lo que forzamos ProactorEventLoop.
-# En Linux/Unix, el SelectorEventLoop por defecto sí soporta subprocess_exec,
-# pero lo fijamos explícitamente para tener un comportamiento determinista.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     _EVENT_LOOP_POLICY_NAME = "WindowsProactorEventLoopPolicy"
 else:
-    # En Unix/Linux, el default es SelectorEventLoop que sí soporta subprocess_exec.
-    # Lo fijamos explícitamente para ser deterministas.
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     _EVENT_LOOP_POLICY_NAME = type(asyncio.get_event_loop_policy()).__name__
 
-# Configurar logging básico temprano para que los logs de diagnóstico
-# del engine sean visibles incluso si falla el arranque.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -29,11 +23,8 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Log de diagnóstico: confirmar la política de event loop aplicada
 logger.info(
-    "Event loop policy configurada: platform=%s, policy=%s. "
-    "Esta política es necesaria para soportar asyncio.subprocess "
-    "(requerido por el engine OmniVoice).",
+    "Event loop policy configurada: platform=%s, policy=%s",
     sys.platform,
     _EVENT_LOOP_POLICY_NAME,
 )
@@ -42,16 +33,15 @@ logger.info(
 def _force_proactor_loop_factory() -> asyncio.AbstractEventLoop:
     """
     Factory que devuelve un nuevo event loop compatible con subprocess en Windows.
-
-    Uvicorn invoca este callable (vía --loop-factory) para obtener el loop principal.
-    En Windows devuelve ProactorEventLoop; en Unix devuelve el loop por defecto.
+    
+    Para usar con uvicorn:
+        uvicorn omnivoice_api.main:app --loop-factory=omnivoice_api.main:_force_proactor_loop_factory
     """
     if sys.platform == "win32":
-        logger.info(
-            "Creando ProactorEventLoop para Windows (requerido por asyncio.subprocess)."
-        )
-        return asyncio.ProactorEventLoop()
-    # En Unix, new_event_loop() respeta la policy global (DefaultEventLoopPolicy -> SelectorEventLoop)
+        logger.info("Creando ProactorEventLoop para Windows")
+        loop = asyncio.ProactorEventLoop()
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        return loop
     return asyncio.new_event_loop()
 
 
@@ -67,43 +57,30 @@ from omnivoice_api.api.v1 import voices, tts
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Verificación defensiva del event loop al arrancar.
-    # Si por algún motivo el loop activo no soporta subprocess (p.ej. uvicorn
-    # ignoró la policy global), lo detectamos aquí y lo logueamos claramente.
     try:
         current_loop = asyncio.get_running_loop()
         loop_class = type(current_loop).__name__
         is_proactor = isinstance(current_loop, asyncio.ProactorEventLoop)
-        is_selector = isinstance(current_loop, asyncio.SelectorEventLoop)
         logger.info(
-            "Lifespan startup: loop activo class=%s, is_proactor=%s, is_selector=%s, platform=%s",
-            loop_class, is_proactor, is_selector, sys.platform,
+            "Lifespan startup: loop class=%s, is_proactor=%s, platform=%s",
+            loop_class, is_proactor, sys.platform,
         )
         if sys.platform == "win32" and not is_proactor:
-            logger.error(
-                "ATENCIÓN: en Windows se requiere ProactorEventLoop para asyncio.subprocess, "
-                "pero el loop activo es %s. Las llamadas al engine OmniVoice fallarán con "
-                "NotImplementedError. Asegúrate de ejecutar con: "
-                "uvicorn omnivoice_api.main:app --loop-factory=omnivoice_api.main:_force_proactor_loop_factory "
-                "o usa el helper _force_proactor_loop_factory().",
-                loop_class,
+            logger.warning(
+                "ATENCIÓN: en Windows se requiere ProactorEventLoop para asyncio.subprocess. "
+                "Ejecuta con: uvicorn ... --loop-factory=omnivoice_api.main:_force_proactor_loop_factory"
             )
     except RuntimeError:
         pass
 
-    # Startup
     logger.info("Application startup: inicializando engine OmniVoice...")
     try:
-        await get_engine()  # Inicializa el engine (warmup incluido)
+        await get_engine()
         logger.info("Engine OmniVoice inicializado correctamente")
     except Exception as e:
-        logger.exception(
-            "Fallo durante la inicialización del engine en lifespan.startup: %s",
-            e,
-        )
+        logger.exception("Fallo inicializando engine: %s", e)
         raise
     yield
-    # Shutdown
     logger.info("Application shutdown: cerrando engine OmniVoice...")
     await close_engine()
 
@@ -118,7 +95,6 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# CORS
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
@@ -128,16 +104,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
-# voices.router ya tiene prefix="/voices", por lo que se monta en /api/v1/voices
 app.include_router(voices.router, prefix="/api/v1")
-# tts.router ahora tiene prefix="/tts", por lo que se monta en /api/v1/tts
 app.include_router(tts.router, prefix="/api/v1")
 
 
 @app.get("/api/v1/health", tags=["Health"])
 async def health_check() -> JSONResponse:
-    """Health check completo (modelo, GPU, DB)."""
     engine = await get_engine()
     health = await engine.health_check()
     settings = get_settings()
@@ -146,41 +118,31 @@ async def health_check() -> JSONResponse:
             "status": "ok" if health["model_loaded"] else "degraded",
             "version": settings.APP_VERSION,
             "device": health["device"],
-            "install_dir": str(settings.OMNIVOICE_INSTALL_DIR),
-            "venv_dir": str(settings.OMNIVOICE_VENV_DIR),
-            "python_bin": str(settings.python_bin),
+            "mode": health.get("mode", "UNKNOWN"),
         }
     )
 
 
 @app.get("/api/v1/health/live", tags=["Health"])
 async def liveness() -> JSONResponse:
-    """Liveness probe (Kubernetes)."""
     return JSONResponse(content={"status": "alive"})
 
 
 @app.get("/api/v1/health/ready", tags=["Health"])
 async def readiness() -> JSONResponse:
-    """Readiness probe (Kubernetes)."""
     engine = await get_engine()
     health = await engine.health_check()
     settings = get_settings()
-
-    # Check if installation directories exist
     install_dir_exists = settings.OMNIVOICE_INSTALL_DIR.exists()
     venv_python_exists = settings.python_bin.exists()
-
-    # Installation is ready if both directories exist and model is loaded
-    installation_ready = install_dir_exists and venv_python_exists
-    model_ready = health["model_loaded"]
-    ready = installation_ready and model_ready
-
+    ready = install_dir_exists and venv_python_exists and health["model_loaded"]
     return JSONResponse(
         content={
             "status": "ready" if ready else "not_ready",
             "checks": {
                 "install_dir_exists": install_dir_exists,
                 "venv_python_exists": venv_python_exists,
+                "model_loaded": health["model_loaded"],
             }
         },
         status_code=200 if ready else 503,
@@ -189,7 +151,6 @@ async def readiness() -> JSONResponse:
 
 @app.get("/", tags=["Root"])
 async def root() -> JSONResponse:
-    """Endpoint raíz con información básica."""
     return JSONResponse(
         content={
             "name": "OmniVoice API",
@@ -198,3 +159,25 @@ async def root() -> JSONResponse:
             "health": "/api/v1/health",
         }
     )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    if sys.platform == "win32":
+        # En Windows, uvicorn debe usar el loop factory para ProactorEventLoop
+        uvicorn.run(
+            "omnivoice_api.main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=True,
+            loop="asyncio",
+            factory=True,
+        )
+    else:
+        uvicorn.run(
+            "omnivoice_api.main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=True,
+        )
