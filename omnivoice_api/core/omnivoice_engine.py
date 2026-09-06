@@ -8,6 +8,7 @@ import logging
 import math
 import os
 import struct
+import subprocess
 import sys
 import threading
 import io
@@ -126,6 +127,85 @@ def _log_subprocess_not_implemented(operation: str, cmd: list[str], error: Excep
         loop_class, is_proactor, is_selector,
         policy_class,
     )
+
+
+def _loop_supports_subprocess() -> bool:
+    """
+    Detecta si el event loop activo soporta asyncio.subprocess.
+
+    Returns:
+        True si el loop soporta subprocess_exec, False en caso contrario.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        # ProactorEventLoop soporta subprocess, SelectorEventLoop no (en Windows)
+        return isinstance(loop, asyncio.ProactorEventLoop) or not sys.platform == "win32"
+    except RuntimeError:
+        # No hay loop activo, asumimos que sí soporta (se creará uno nuevo)
+        return True
+
+
+async def _run_subprocess_async(
+    cmd: list[str],
+    timeout: float | None = None,
+    capture_output: bool = True,
+) -> tuple[int, bytes, bytes]:
+    """
+    Ejecuta un comando subprocess de forma asíncrona.
+
+    Intenta usar asyncio.create_subprocess_exec si el loop lo soporta.
+    Si no (NotImplementedError), usa subprocess.run envuelto en asyncio.to_thread
+    como fallback síncrono.
+
+    Args:
+        cmd: Comando a ejecutar
+        timeout: Timeout en segundos
+        capture_output: Si True, captura stdout y stderr
+
+    Returns:
+        Tupla (returncode, stdout, stderr)
+    """
+    _log_subprocess_context(operation="run_subprocess", cmd=cmd)
+
+    if _loop_supports_subprocess():
+        # Uso asyncio nativo
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE if capture_output else None,
+                stderr=asyncio.subprocess.PIPE if capture_output else None,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout,
+            )
+            return proc.returncode, stdout or b"", stderr or b""
+        except NotImplementedError as e:
+            _log_subprocess_not_implemented(operation="run_subprocess", cmd=cmd, error=e)
+            # Caer al fallback síncrono
+
+    # Fallback: subprocess.run en thread separado
+    logger.warning(
+        "FALLBACK SÍNCRONO: usando subprocess.run en asyncio.to_thread. "
+        "op=run_subprocess, cmd=%s",
+        cmd,
+    )
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            capture_output=capture_output,
+            timeout=timeout,
+            check=False,
+        )
+        return result.returncode, result.stdout, result.stderr
+    except Exception as e:
+        logger.error(
+            "Fallback síncrono también falló: %s",
+            e,
+            exc_info=True,
+        )
+        raise
 
 
 class OmniVoiceEngineInterface(Protocol):
@@ -296,20 +376,15 @@ class OmniVoiceEngine:
         _log_subprocess_context(operation="validate_python_version", cmd=cmd)
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
+            returncode, stdout, stderr = await _run_subprocess_async(
+                cmd,
                 timeout=self._settings.ENGINE_STARTUP_TIMEOUT_SEC,
             )
             version_line = (stdout or stderr).decode(errors="replace").strip()
             logger.info("Versión de Python del venv OmniVoice: %s", version_line)
-            if proc.returncode != 0:
+            if returncode != 0:
                 raise EngineUnavailableError(
-                    f"Python del venv OmniVoice no ejecutable (rc={proc.returncode}): {version_line}"
+                    f"Python del venv OmniVoice no ejecutable (rc={returncode}): {version_line}"
                 )
         except NotImplementedError as e:
             _log_subprocess_not_implemented(
@@ -373,23 +448,12 @@ class OmniVoiceEngine:
             cmd = [str(python_bin), "-m", cli_entry, "--health"]
             _log_subprocess_context(operation="warmup_cli_health", cmd=cmd)
 
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            returncode, stdout, stderr = await _run_subprocess_async(
+                cmd,
+                timeout=self._settings.ENGINE_STARTUP_TIMEOUT_SEC,
             )
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=self._settings.ENGINE_STARTUP_TIMEOUT_SEC,
-                )
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                logger.warning("Timeout en warmup --health del CLI OmniVoice (continuando)")
-                return
 
-            if proc.returncode == 0:
+            if returncode == 0:
                 logger.info(
                     "Warmup OK. CLI OmniVoice responde. stdout=%s",
                     stdout.decode(errors="replace").strip()[:200],
@@ -397,7 +461,7 @@ class OmniVoiceEngine:
             else:
                 logger.warning(
                     "Warmup CLI OmniVoice rc=%d. stderr=%s",
-                    proc.returncode,
+                    returncode,
                     stderr.decode(errors="replace").strip()[:500],
                 )
         except NotImplementedError as e:
@@ -468,34 +532,21 @@ class OmniVoiceEngine:
         )
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            returncode, stdout, stderr = await _run_subprocess_async(
+                cmd,
+                timeout=self._settings.ENGINE_REQUEST_TIMEOUT_SEC,
             )
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=self._settings.ENGINE_REQUEST_TIMEOUT_SEC,
-                )
-            except asyncio.TimeoutError as e:
-                proc.kill()
-                await proc.wait()
-                raise EngineUnavailableError(
-                    f"Timeout ({self._settings.ENGINE_REQUEST_TIMEOUT_SEC}s) invocando CLI OmniVoice "
-                    f"para op={operation}"
-                ) from e
 
-            if proc.returncode != 0:
+            if returncode != 0:
                 err_msg = stderr.decode(errors="replace").strip()
                 logger.error(
                     "CLI OmniVoice rc=%d para op=%s. stderr=%s",
-                    proc.returncode,
+                    returncode,
                     operation,
                     err_msg[:1000],
                 )
                 raise EngineUnavailableError(
-                    f"CLI OmniVoice falló (rc={proc.returncode}) para op={operation}: {err_msg[:500]}"
+                    f"CLI OmniVoice falló (rc={returncode}) para op={operation}: {err_msg[:500]}"
                 )
 
             # Leer WAV de salida
@@ -504,8 +555,7 @@ class OmniVoiceEngine:
                     f"CLI OmniVoice no generó archivo de salida: {out_path}"
                 )
 
-            with open(out_path, "rb") as f:
-                wav_bytes = f.read()
+            wav_bytes = await asyncio.to_thread(self._read_file_bytes, out_path)
 
             logger.info(
                 "CLI OmniVoice OK: op=%s, wav_bytes=%d, stdout_preview=%s",
@@ -538,6 +588,11 @@ class OmniVoiceEngine:
                         os.unlink(p)
                 except OSError:
                     pass
+
+    def _read_file_bytes(self, path: str) -> bytes:
+        """Lee un archivo y devuelve sus bytes (para usar en threadpool)."""
+        with open(path, "rb") as f:
+            return f.read()
 
     async def synthesize_stock(
         self,
