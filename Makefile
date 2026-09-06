@@ -19,7 +19,7 @@ ifeq ($(OS),Windows_NT)
     RM_F := del /f /q
     MKDIR_P := mkdir
     TOUCH := type nul >
-    FIND_PYCACHE := for /d /r . %d in (__pycache__) do @if exist "%d" rmdir /s /q "%d"
+    FIND_PYCACHE := for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
     FIND_PYC := del /s /q *.pyc
     NULL := nul
     SHELL := cmd.exe
