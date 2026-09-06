@@ -104,7 +104,7 @@ run: install
 	$(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000
 
 dev: install
-	$(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000 --reload --loop-factory=omnivoice_api.main:_force_proactor_loop_factory
+	$(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Utilidades
 check-gpu: install
