@@ -39,29 +39,20 @@ logger.info(
 )
 
 
-def _force_proactor_loop_factory():
+def _force_proactor_loop_factory() -> asyncio.AbstractEventLoop:
     """
-    Devuelve un loop_factory que fuerza ProactorEventLoop en Windows.
+    Factory que devuelve un nuevo event loop compatible con subprocess en Windows.
 
-    Esto es necesario porque en algunas versiones de uvicorn, aunque se
-    haya instalado WindowsProactorEventLoopPolicy, uvicorn crea su propio
-    loop usando SelectorEventLoop. Este factory se pasa a uvicorn vía
-    `loop_factory=...` para garantizar que el loop creado sea Proactor.
-
-    En Linux/Unix devuelve None (uvicorn usa el default).
+    Uvicorn invoca este callable (vía --loop-factory) para obtener el loop principal.
+    En Windows devuelve ProactorEventLoop; en Unix devuelve el loop por defecto.
     """
     if sys.platform == "win32":
         logger.info(
-            "Proporcionando loop_factory para forzar ProactorEventLoop en Windows. "
-            "Esto es necesario porque uvicorn puede ignorar la policy global."
+            "Creando ProactorEventLoop para Windows (requerido por asyncio.subprocess)."
         )
-        return asyncio.ProactorEventLoop
-    return None
-
-
-# Exportar el factory para que uvicorn pueda usarlo:
-# uvicorn omnivoice_api.main:app --loop-factory=omnivoice_api.main:_force_proactor_loop_factory
-loop_factory = _force_proactor_loop_factory()
+        return asyncio.ProactorEventLoop()
+    # En Unix, new_event_loop() respeta la policy global (DefaultEventLoopPolicy -> SelectorEventLoop)
+    return asyncio.new_event_loop()
 
 
 from contextlib import asynccontextmanager
