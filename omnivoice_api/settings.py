@@ -20,22 +20,18 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
 
     # --- OmniVoice Engine ---
-    OMNIVOICE_INSTALL_DIR: Path
-    OMNIVOICE_VENV_DIR: Path
-    OMNIVOICE_PATH: Path
-    OMNIVOICE_MODEL_PATH: Path | None = None
+    OMNIVOICE_MODEL_ID: str = "k2-fsa/OmniVoice"
+    OMNIVOICE_DTYPE: Literal["float16", "float32", "int8"] = "float16"
+    OMNIVOICE_WARMUP_ON_START: bool = False
     OMNIVOICE_DEVICE: str = "cuda:0"
     OMNIVOICE_LANGUAGES: str = "es,en,zh,ja,ko,fr,de"
-    OMNIVOICE_CLI_MODULE: str = "omnivoice.cli.infer"
     MAX_REFERENCE_DURATION_SEC: int = 30
     ENGINE_CONCURRENCY: int = 1
-    ENGINE_STARTUP_TIMEOUT_SEC: int = 30
     ENGINE_REQUEST_TIMEOUT_SEC: int = 120
 
     # --- Mock / Real engine toggle ---
     # Si True, usa generación de tonos mock (útil para tests sin GPU/modelo).
-    # Si False (por defecto), llama al motor OmniVoice real vía subprocess
-    # (`python -m omnivoice.cli.infer` dentro del venv externo).
+    # Si False (por defecto), llama al motor OmniVoice real vía subprocess.
     OMNIVOICE_USE_MOCK: bool = False
 
     # --- Database ---
@@ -69,17 +65,8 @@ class Settings(BaseSettings):
 
     @property
     def model_path(self) -> Path:
-        """Ruta resuelta al modelo (usa OMNIVOICE_MODEL_PATH o deriva de INSTALL_DIR)."""
-        if self.OMNIVOICE_MODEL_PATH:
-            return self.OMNIVOICE_MODEL_PATH
-        return self.OMNIVOICE_INSTALL_DIR / "models"
-
-    @property
-    def python_bin(self) -> Path:
-        """Ruta al python del venv externo de OmniVoice."""
-        if os.name == "nt":
-            return self.OMNIVOICE_VENV_DIR / "Scripts" / "python.exe"
-        return self.OMNIVOICE_VENV_DIR / "bin" / "python"
+        """Ruta resuelta al modelo (derivada de OMNIVOICE_MODEL_ID via HuggingFace)."""
+        return self.OMNIVOICE_MODEL_ID
 
 
 def get_settings() -> Settings:
