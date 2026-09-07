@@ -62,39 +62,41 @@ def _isolate_external_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     Evita que los tests dependan de la instalación real en
     ``C:\\AI\\TTS\\OMNIVOICE\\...``.
+
+    Además, fuerza ``OMNIVOICE_USE_MOCK=true`` para que cualquier intento de
+    inicializar el engine real (p.ej. en el lifespan de FastAPI) caiga al
+    modo mock sin necesidad de tener torch/torchaudio/OmniVoice instalados.
+    Esto blinda los tests contra entornos de CI donde torchaudio puede
+    faltar o estar roto (mismatch con torch → ``undefined symbol``).
     """
+    import sys
+
     fake_install = tmp_path / "OMNIVOICE"
     fake_venv = tmp_path / "omnivoice_env"
     fake_install.mkdir()
     fake_venv.mkdir()
-    if fake_venv.name == "omnivoice_env" and "Scripts" not in fake_venv.parts:
-        # Crear estructura mínima para que python_bin_from_venv() resuelva
-        scripts = fake_venv / ("Scripts" if __import__("sys").platform == "win32" else "bin")
-        scripts.mkdir(parents=True, exist_ok=True)
-        (scripts / ("python.exe" if __import__("sys").platform == "win32" else "python")).touch()
+
+    # Crear estructura mínima para que python_bin_from_venv() resuelva
+    scripts = fake_venv / ("Scripts" if sys.platform == "win32" else "bin")
+    scripts.mkdir(parents=True, exist_ok=True)
+    (scripts / ("python.exe" if sys.platform == "win32" else "python")).touch()
 
     monkeypatch.setenv("OMNIVOICE_INSTALL_DIR", str(fake_install))
     monkeypatch.setenv("OMNIVOICE_VENV_DIR", str(fake_venv))
+    # Forzar modo mock: los tests no deben tocar el motor real nunca.
+    monkeypatch.setenv("OMNIVOICE_USE_MOCK", "true")
+    # El fallback no debe activarse en tests (no queremos warnings de
+    # "engine degradado" en la salida de pytest).
+    monkeypatch.setenv("OMNIVOICE_FALLBACK_TO_MOCK", "false")
 
     # Invalidar el cache de settings para que se relean las env vars
-    from omnivoice_api.settings import get_settings
-
-    # Reiniciar el singleton para que se relean las env vars
     import omnivoice_api.settings
     omnivoice_api.settings._settings_instance = None
-
-    # Debug: print the environment variables being set
-    print(f"[DEBUG] Setting OMNIVOICE_INSTALL_DIR to: {str(fake_install)}")
-    print(f"[DEBUG] Setting OMNIVOICE_VENV_DIR to: {str(fake_venv)}")
 
     yield
 
-    # Reiniciar el singleton nuevamente para limpiar después del test
-    import omnivoice_api.settings
+    # Reiniciar el singleton para limpiar después del test
     omnivoice_api.settings._settings_instance = None
-    
-    # Debug: print that we're cleaning up
-    print(f"[DEBUG] Cleaning up after test")
 
 
 # ---------------------------------------------------------------------------
@@ -229,4 +231,3 @@ def sample_audio_bytes() -> bytes:
         b"\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00"
         b"\x02\x00\x10\x00data\x00\x00\x00\x00"
     )
-
