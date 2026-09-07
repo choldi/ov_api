@@ -3,72 +3,24 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import io
 import logging
 import math
-import os
 import struct
-import subprocess
-import sys
-import threading
-import io
 import wave
 from pathlib import Path
-from typing import Protocol, Any
+from typing import Protocol
+
+import torch
 
 from omnivoice_api.settings import get_settings
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
     UnsupportedEmotionError,
-    UnsupportedLanguageError,
     VoiceNotFoundError,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _loop_supports_subprocess() -> bool:
-    """Detecta si el event loop activo soporta asyncio.subprocess."""
-    try:
-        loop = asyncio.get_running_loop()
-        return isinstance(loop, asyncio.ProactorEventLoop) or sys.platform != "win32"
-    except RuntimeError:
-        return True
-
-
-async def _run_subprocess_async(
-    cmd: list[str],
-    timeout: float | None = None,
-) -> tuple[int, bytes, bytes]:
-    """
-    Ejecuta un comando subprocess de forma asíncrona.
-    """
-    logger.info("Subprocess: cmd=%s", " ".join(cmd))
-    
-    if _loop_supports_subprocess():
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=timeout,
-            )
-            return proc.returncode, stdout or b"", stderr or b""
-        except NotImplementedError:
-            logger.warning("asyncio.subprocess no soportado, usando fallback síncrono")
-
-    # Fallback síncrono
-    result = await asyncio.to_thread(
-        subprocess.run,
-        cmd,
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-    )
-    return result.returncode, result.stdout, result.stderr
 
 
 class OmniVoiceEngineInterface(Protocol):
@@ -79,7 +31,7 @@ class OmniVoiceEngineInterface(Protocol):
         *,
         text: str,
         voice_id: str,
-        language: str,
+        language: str | None = None,
         speed: float = 1.0,
         emotion: str | None = None,
         intensity: float | None = None,
@@ -91,7 +43,7 @@ class OmniVoiceEngineInterface(Protocol):
         *,
         text: str,
         reference_audio_path: str,
-        language: str,
+        language: str | None = None,
         emotion: str | None = None,
         intensity: float | None = None,
     ) -> bytes:
@@ -110,12 +62,50 @@ class OmniVoiceEngineInterface(Protocol):
         ...
 
 
+# Mapeo de voces stock a instrucciones de voz design
+STOCK_VOICE_INSTRUCTS: dict[str, str] = {
+    "es-mx-male": "male voice, Mexican Spanish accent",
+    "es-mx-female": "female voice, Mexican Spanish accent",
+    "es-es-male": "male voice, Spanish Spain accent",
+    "es-es-female": "female voice, Spanish Spain accent",
+    "en-us-male": "male voice, American English accent",
+    "en-us-female": "female voice, American English accent",
+    "en-gb-male": "male voice, British English accent",
+    "en-gb-female": "female voice, British English accent",
+    "fr-fr-male": "male voice, French accent",
+    "fr-fr-female": "female voice, French accent",
+    "de-de-male": "male voice, German accent",
+    "de-de-female": "female voice, German accent",
+    "it-it-male": "male voice, Italian accent",
+    "it-it-female": "female voice, Italian accent",
+    "pt-br-male": "male voice, Brazilian Portuguese accent",
+    "pt-br-female": "female voice, Brazilian Portuguese accent",
+    "zh-cn-male": "male voice, Mandarin Chinese accent",
+    "zh-cn-female": "female voice, Mandarin Chinese accent",
+    "ja-jp-male": "male voice, Japanese accent",
+    "ja-jp-female": "female voice, Japanese accent",
+    "ko-kr-male": "male voice, Korean accent",
+    "ko-kr-female": "female voice, Korean accent",
+}
+
+
+def _get_dtype() -> torch.dtype:
+    """Convierte el string de dtype a torch.dtype."""
+    settings = get_settings()
+    dtype_map = {
+        "float16": torch.float16,
+        "float32": torch.float32,
+        "int8": torch.int8,
+    }
+    return dtype_map.get(settings.OMNIVOICE_DTYPE, torch.float16)
+
+
 class OmniVoiceEngine:
     """
-    Implementación del motor OmniVoice (singleton).
+    Implementación del motor OmniVoice usando la API de Python directamente.
     
     Si OMNIVOICE_USE_MOCK=True, genera tonos de prueba.
-    Si OMNIVOICE_USE_MOCK=False, invoca el CLI del venv externo.
+    Si OMNIVOICE_USE_MOCK=False, usa OmniVoice.from_pretrained().
     """
 
     _instance: OmniVoiceEngine | None = None
@@ -132,14 +122,10 @@ class OmniVoiceEngine:
         self._initialized = True
 
         self._settings = get_settings()
-        self._model: Any = None
-        self._device = self._settings.OMNIVOICE_DEVICE
-        self._semaphore = asyncio.Semaphore(self._settings.ENGINE_CONCURRENCY)
+        self._model = None
         self._stock_voices: list[dict] = []
         self._emotions: list[str] = ["neutral", "happy", "sad", "angry", "surprised"]
-        self._languages: list[str] = self._settings.omnilang_list
         self._use_mock: bool = self._settings.OMNIVOICE_USE_MOCK
-        self._cli_path: Path | None = None  # Ruta directa al script CLI
 
     async def initialize(self) -> None:
         """Inicializa el modelo."""
@@ -151,214 +137,52 @@ class OmniVoiceEngine:
         self._use_mock = self._settings.OMNIVOICE_USE_MOCK
         logger.info("OMNIVOICE_USE_MOCK=%s", self._use_mock)
 
-        self._device = self._settings.OMNIVOICE_DEVICE
-
         if self._use_mock:
             logger.warning("MODO MOCK: generando tonos de prueba")
-            self._model = object()
             self._stock_voices = self._get_mock_stock_voices()
             await self.warmup()
             logger.info("Mock engine inicializado")
             return
 
-        # Modo REAL
-        logger.info("Modo REAL: buscando CLI de OmniVoice...")
+        # Modo REAL: cargar modelo OmniVoice
+        logger.info("Modo REAL: cargando OmniVoice...")
         
-        # Intentar encontrar la ruta directa al CLI
-        self._cli_path = await self._find_omnivoice_cli()
-        
-        if self._cli_path is None:
-            logger.warning("No se pudo encontrar CLI de OmniVoice, intentando invocar como módulo...")
-        
-        self._model = object()
-        self._stock_voices = self._get_mock_stock_voices()
-        await self.warmup()
-        logger.info("Engine OmniVoice REAL inicializado")
-
-    async def _find_omnivoice_cli(self) -> Path | None:
-        """
-        Busca la ruta directa al script CLI de OmniVoice.
-        
-        Returns:
-            Path al script CLI o None si no se encuentra.
-        """
-        venv_dir = self._settings.OMNIVOICE_VENV_DIR
-        python_bin = self._settings.python_bin
-        
-        # Posibles ubicaciones del CLI en Windows
-        possible_paths = [
-            venv_dir / "Scripts" / "omnivoice.exe",
-            venv_dir / "Scripts" / "omnivoice-cli.exe",
-            venv_dir / "Scripts" / "omnivoice_cli.exe",
-            venv_dir / "Scripts" / "omni_voice.exe",
-            venv_dir / "Scripts" / "omnivoice-script.py",
-            venv_dir / "Scripts" / "omnivoice_cli-script.py",
-        ]
-        
-        # En Unix
-        if sys.platform != "win32":
-            possible_paths = [
-                venv_dir / "bin" / "omnivoice",
-                venv_dir / "bin" / "omnivoice-cli",
-            ]
-        
-        for cli_path in possible_paths:
-            if cli_path.exists():
-                logger.info("CLI de OmniVoice encontrado en: %s", cli_path)
-                return cli_path
-        
-        # Verificar si hay scripts de consola en site-packages
-        site_packages = venv_dir / "Lib" / "site-packages"
-        if not site_packages.exists():
-            site_packages = venv_dir / "lib" / "python3.11" / "site-packages"
-        
-        if site_packages.exists():
-            # Buscar scripts de consola
-            console_scripts = site_packages / "console_scripts"
-            if console_scripts.exists():
-                for f in console_scripts.iterdir():
-                    if "omnivoice" in f.name.lower():
-                        logger.info("CLI encontrado en console_scripts: %s", f)
-                        return f
-        
-        return None
-
-    def _get_cli_commands(self, *args: str) -> list[list[str]]:
-        """
-        Obtiene comandos posibles para invocar el CLI.
-        
-        Returns:
-            Lista de comandos a intentar.
-        """
-        python_bin = self._settings.python_bin
-        commands: list[list[str]] = []
-        
-        # Si tenemos la ruta directa al CLI, usarlo primero
-        if self._cli_path is not None:
-            commands.append([str(self._cli_path)] + list(args))
-            # En Windows, los scripts .py necesitan python.exe
-            if self._cli_path.suffix == ".py":
-                commands.insert(0, [str(python_bin), str(self._cli_path)] + list(args))
-        
-        # Intentar con python -m
-        cli_module = self._settings.OMNIVOICE_CLI_MODULE
-        commands.append([str(python_bin), "-m", cli_module] + list(args))
-        
-        # Intentar con el módulo base
-        if "." in cli_module:
-            base_module = cli_module.split(".")[0]
-            commands.append([str(python_bin), "-m", base_module] + list(args))
-        
-        return commands
+        try:
+            from omnivoice import OmniVoice
+            
+            self._model = OmniVoice.from_pretrained(
+                self._settings.OMNIVOICE_MODEL_ID,
+                device_map=self._settings.OMNIVOICE_DEVICE,
+                dtype=_get_dtype(),
+            )
+            self._stock_voices = self._get_mock_stock_voices()
+            await self.warmup()
+            logger.info("Engine OmniVoice REAL inicializado")
+        except Exception as e:
+            logger.error("Error cargando OmniVoice: %s", e)
+            raise EngineUnavailableError(f"No se pudo cargar el modelo OmniVoice: {e}")
 
     async def warmup(self) -> None:
-        """Verifica que el CLI responde."""
+        """Verifica que el modelo responde."""
         if self._use_mock:
             await asyncio.sleep(0.01)
             return
 
-        logger.info("Warmup: verificando CLI OmniVoice...")
+        logger.info("Warmup: probando síntesis...")
         
-        # Intentar con --health o --help
-        test_args = ["--help"]
-        
-        for cmd in self._get_cli_commands(*test_args):
-            try:
-                returncode, stdout, stderr = await _run_subprocess_async(
-                    cmd,
-                    timeout=10,
-                )
-                output = (stdout + stderr).decode(errors="replace")
-                
-                if returncode in (0, 1):  # --help típicamente devuelve 1
-                    logger.info("Warmup OK con cmd=%s", " ".join(cmd[:3]))
-                    return
-                else:
-                    logger.debug("Warmup falló con rc=%d: %s", returncode, output[:200])
-            except Exception as e:
-                logger.debug("Warmup exception con cmd=%s: %s", cmd[:3], e)
-        
-        logger.warning("Warmup no pudo verificar el CLI")
-
-    async def _invoke_cli(
-        self,
-        *,
-        operation: str,
-        payload: dict,
-    ) -> bytes:
-        """Invoca el CLI de OmniVoice y devuelve los WAV bytes."""
-        import tempfile
-        
-        # Escribir payload a archivo temporal
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".json",
-            delete=False,
-            encoding="utf-8",
-        ) as in_file:
-            json.dump(payload, in_file, ensure_ascii=False)
-            in_path = in_file.name
-
-        out_path = tempfile.mktemp(suffix=".wav")
-
-        cli_args = ["--op", operation, "--in", in_path, "--out", out_path]
-        commands = self._get_cli_commands(*cli_args)
-        
-        cwd = str(self._settings.OMNIVOICE_VENV_DIR)
-        env = os.environ.copy()
-        venv_dir = self._settings.OMNIVOICE_VENV_DIR
-        if venv_dir:
-            existing = env.get("PYTHONPATH", "")
-            env["PYTHONPATH"] = str(venv_dir) + (os.pathsep + existing if existing else "")
-
-        last_error: Exception | None = None
-        
-        for cmd in commands:
-            logger.info("Invocando CLI: %s", " ".join(cmd[:5]))
-            
-            try:
-                returncode, stdout, stderr = await _run_subprocess_async(
-                    cmd,
-                    timeout=self._settings.ENGINE_REQUEST_TIMEOUT_SEC,
-                )
-
-                if returncode != 0:
-                    err_msg = stderr.decode(errors="replace").strip()
-                    # Si es error de "package cannot be executed", probar siguiente método
-                    if "is a package" in err_msg or "No module named" in err_msg:
-                        logger.debug("Método no aplicable: %s", err_msg[:100])
-                        last_error = EngineUnavailableError(err_msg)
-                        continue
-                    
-                    raise EngineUnavailableError(
-                        f"CLI falló (rc={returncode}): {err_msg[:500]}"
-                    )
-
-                if not os.path.exists(out_path):
-                    raise EngineUnavailableError(f"CLI no generó archivo: {out_path}")
-
-                wav_bytes = await asyncio.to_thread(
-                    lambda: open(out_path, "rb").read()
-                )
-                
-                logger.info("CLI OK: %d bytes", len(wav_bytes))
-                return wav_bytes
-
-            except asyncio.TimeoutError:
-                last_error = EngineUnavailableError(f"Timeout ({self._settings.ENGINE_REQUEST_TIMEOUT_SEC}s)")
-            except FileNotFoundError:
-                last_error = EngineUnavailableError(f"Python no encontrado: {self._settings.python_bin}")
-            except Exception as e:
-                last_error = e
-            finally:
-                for p in (in_path, out_path):
-                    try:
-                        if os.path.exists(p):
-                            os.unlink(p)
-                    except OSError:
-                        pass
-
-        raise last_error or EngineUnavailableError("CLI no disponible")
+        try:
+            # Warmup con una síntesis simple
+            import numpy as np
+            audio = self._model.generate(
+                text=".",
+                num_step=1,  # Mínimo para warmup
+            )
+            if audio and len(audio) > 0:
+                logger.info("Warmup OK")
+            else:
+                logger.warning("Warmup: audio vacío")
+        except Exception as e:
+            logger.warning("Warmup falló: %s", e)
 
     def _get_mock_stock_voices(self) -> list[dict]:
         """Voces stock mock."""
@@ -384,93 +208,158 @@ class OmniVoiceEngine:
             {"voice_id": "ja-jp-male", "language": "ja", "gender": "male", "name": "Japanese Male"},
             {"voice_id": "ja-jp-female", "language": "ja", "gender": "female", "name": "Japanese Female"},
             {"voice_id": "ko-kr-male", "language": "ko", "gender": "male", "name": "Korean Male"},
-            {"voice_id": "ko-kr-female", "language": "ko", "gender": "female", "name": "Korean Female"},
+            {"voice_id": "ko-kr-female", "language": "ko", "gender": "female", "name": "Korean Male"},
         ]
+
+    def _emotion_to_instruct(self, emotion: str | None, intensity: float | None = None) -> str | None:
+        """Convierte emoción a instrucción de voz."""
+        if not emotion:
+            return None
+        
+        intensity_suffix = ""
+        if intensity is not None:
+            if intensity > 0.7:
+                intensity_suffix = ", very expressive"
+            elif intensity < 0.3:
+                intensity_suffix = ", subtle"
+        
+        emotion_map = {
+            "neutral": "neutral tone",
+            "happy": "happy" + intensity_suffix,
+            "sad": "sad" + intensity_suffix,
+            "angry": "angry" + intensity_suffix,
+            "surprised": "surprised" + intensity_suffix,
+        }
+        
+        return emotion_map.get(emotion)
+
+    def _build_instruct(self, voice_id: str, emotion: str | None = None, intensity: float | None = None) -> str:
+        """Construye la instrucción completa para voice design."""
+        base_instruct = STOCK_VOICE_INSTRUCTS.get(voice_id, "natural voice")
+        
+        emotion_instruct = self._emotion_to_instruct(emotion, intensity)
+        if emotion_instruct:
+            return f"{base_instruct}, {emotion_instruct}"
+        
+        return base_instruct
+
+    def _numpy_to_wav(self, audio: list) -> bytes:
+        """Convierte lista de numpy arrays a WAV bytes."""
+        import numpy as np
+        
+        if not audio or len(audio) == 0:
+            raise EngineUnavailableError("El modelo no generó audio")
+        
+        # Concatenar todos los chunks
+        audio_data = np.concatenate(audio) if len(audio) > 1 else audio[0]
+        
+        # Normalizar a float32 en rango [-1, 1] si es necesario
+        if audio_data.dtype != np.float32:
+            audio_data = audio_data.astype(np.float32)
+        
+        # Escalar a int16 para WAV
+        audio_int16 = (audio_data * 32767).astype(np.int16)
+        
+        # Escribir a BytesIO como WAV (24 kHz, 1 canal)
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)  # 16-bit
+            wav_file.setframerate(24000)
+            wav_file.writeframes(audio_int16.tobytes())
+        
+        return buffer.getvalue()
 
     async def synthesize_stock(
         self,
         *,
         text: str,
         voice_id: str,
-        language: str,
+        language: str | None = None,
         speed: float = 1.0,
         emotion: str | None = None,
         intensity: float | None = None,
     ) -> bytes:
-        """Sintetiza con voz stock."""
+        """Sintetiza con voz stock (voice design)."""
         logger.debug("synthesize_stock: voice_id=%s, text_len=%d", voice_id, len(text))
 
+        # Verificar que la voz existe
         voice = next((v for v in self._stock_voices if v["voice_id"] == voice_id), None)
         if not voice:
             raise VoiceNotFoundError(voice_id, "stock")
 
-        if language not in self._languages:
-            raise UnsupportedLanguageError(language, self._languages)
-
+        # Validar emoción
         if emotion and emotion not in self._emotions:
             raise UnsupportedEmotionError(emotion, self._emotions)
 
-        async with self._semaphore:
-            if self._use_mock:
-                return self._generate_test_tone_wav(
-                    duration_sec=max(0.5, len(text) * 0.08),
-                    sample_rate=22050,
-                    frequency=440.0,
-                    amplitude=0.3,
-                )
+        if self._use_mock:
+            return self._generate_test_tone_wav(
+                duration_sec=max(0.5, len(text) * 0.08),
+                sample_rate=22050,
+                frequency=440.0,
+                amplitude=0.3,
+            )
 
-            payload = {
-                "text": text,
-                "voice_id": voice_id,
-                "language": language,
-                "speed": speed,
-                "emotion": emotion,
-                "intensity": intensity,
-                "model_path": str(self._settings.model_path),
-                "device": self._device,
-            }
-            return await self._invoke_cli(operation="synthesize_stock", payload=payload)
+        # Modo REAL: usar voice design
+        instruct = self._build_instruct(voice_id, emotion, intensity)
+        
+        try:
+            # Ejecutar en thread pool para no bloquear
+            audio = await asyncio.to_thread(
+                self._model.generate,
+                text=text,
+                instruct=instruct,
+                speed=speed,
+            )
+            
+            return self._numpy_to_wav(audio)
+            
+        except Exception as e:
+            logger.error("Error en synthesize_stock: %s", e)
+            raise EngineUnavailableError(f"Error sintetizando: {e}")
 
     async def synthesize_clone(
         self,
         *,
         text: str,
         reference_audio_path: str,
-        language: str,
+        language: str | None = None,
         emotion: str | None = None,
         intensity: float | None = None,
     ) -> bytes:
         """Sintetiza con voz clonada."""
         logger.debug("synthesize_clone: ref=%s, text_len=%d", reference_audio_path, len(text))
 
-        if language not in self._languages:
-            raise UnsupportedLanguageError(language, self._languages)
-
-        if emotion and emotion not in self._emotions:
-            raise UnsupportedEmotionError(emotion, self._emotions)
-
+        import os
         if not self._use_mock and not os.path.exists(reference_audio_path):
             raise EngineUnavailableError(f"Reference audio no encontrado: {reference_audio_path}")
 
-        async with self._semaphore:
-            if self._use_mock:
-                return self._generate_test_tone_wav(
-                    duration_sec=max(0.5, len(text) * 0.08),
-                    sample_rate=22050,
-                    frequency=880.0,
-                    amplitude=0.3,
-                )
+        # Validar emoción
+        if emotion and emotion not in self._emotions:
+            raise UnsupportedEmotionError(emotion, self._emotions)
 
-            payload = {
-                "text": text,
-                "reference_audio_path": reference_audio_path,
-                "language": language,
-                "emotion": emotion,
-                "intensity": intensity,
-                "model_path": str(self._settings.model_path),
-                "device": self._device,
-            }
-            return await self._invoke_cli(operation="synthesize_clone", payload=payload)
+        if self._use_mock:
+            return self._generate_test_tone_wav(
+                duration_sec=max(0.5, len(text) * 0.08),
+                sample_rate=22050,
+                frequency=880.0,
+                amplitude=0.3,
+            )
+
+        # Modo REAL: usar voice cloning
+        try:
+            # Ejecutar en thread pool para no bloquear
+            audio = await asyncio.to_thread(
+                self._model.generate,
+                text=text,
+                ref_audio=reference_audio_path,
+            )
+            
+            return self._numpy_to_wav(audio)
+            
+        except Exception as e:
+            logger.error("Error en synthesize_clone: %s", e)
+            raise EngineUnavailableError(f"Error sintetizando con voz clonada: {e}")
 
     async def list_stock_voices(self, language: str | None = None) -> list[dict]:
         """Lista voces stock."""
@@ -485,24 +374,25 @@ class OmniVoiceEngine:
 
     async def health_check(self) -> dict:
         """Estado del motor."""
+        gpu_available = False
+        vram_free_mb = 0
+        device_info = "cpu"
+
         try:
-            import torch
             gpu_available = torch.cuda.is_available()
-            vram_free_mb = 0
             if gpu_available:
                 vram_free_mb = torch.cuda.mem_get_info()[0] // (1024 * 1024)
-        except ImportError:
-            gpu_available = False
-            vram_free_mb = 0
+                device_info = f"cuda:{torch.cuda.current_device()}"
+        except Exception:
+            pass
 
         return {
             "model_loaded": self._model is not None,
             "gpu_available": gpu_available,
-            "device": self._device,
+            "device": device_info,
             "stock_voices_count": len(self._stock_voices),
             "vram_free_mb": vram_free_mb,
             "mode": "MOCK" if self._use_mock else "REAL",
-            "cli_path": str(self._cli_path) if self._cli_path else None,
         }
 
     def _generate_test_tone_wav(
@@ -512,7 +402,7 @@ class OmniVoiceEngine:
         frequency: float = 440.0,
         amplitude: float = 0.3,
     ) -> bytes:
-        """Genera WAV con tono senoidal."""
+        """Genera WAV con tono senoidal (para modo mock)."""
         num_samples = int(duration_sec * sample_rate)
         max_amplitude = 32767
 

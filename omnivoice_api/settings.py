@@ -24,16 +24,10 @@ class Settings(BaseSettings):
     OMNIVOICE_DTYPE: Literal["float16", "float32", "int8"] = "float16"
     OMNIVOICE_WARMUP_ON_START: bool = False
     OMNIVOICE_DEVICE: str = "cuda:0"
-    OMNIVOICE_LANGUAGES: str = "es,en,zh,ja,ko,fr,de"
-    OMNIVOICE_VENV_DIR: Path = Path(".venv")
-    OMNIVOICE_CLI_MODULE: str = "omnivoice.cli"
-    MAX_REFERENCE_DURATION_SEC: int = 30
-    ENGINE_CONCURRENCY: int = 1
-    ENGINE_REQUEST_TIMEOUT_SEC: int = 120
 
     # --- Mock / Real engine toggle ---
     # Si True, usa generación de tonos mock (útil para tests sin GPU/modelo).
-    # Si False (por defecto), llama al motor OmniVoice real vía subprocess.
+    # Si False (por defecto), usa el motor OmniVoice real.
     OMNIVOICE_USE_MOCK: bool = False
 
     # --- Database ---
@@ -56,27 +50,9 @@ class Settings(BaseSettings):
     LOG_FORMAT: Literal["json", "console"] = "json"
 
     @property
-    def omnilang_list(self) -> list[str]:
-        """Lista de idiomas como lista de strings."""
-        return [lang.strip() for lang in self.OMNIVOICE_LANGUAGES.split(",") if lang.strip()]
-
-    @property
     def cors_origins_list(self) -> list[str]:
         """Lista de orígenes CORS como lista de strings."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
-
-    @property
-    def model_path(self) -> Path:
-        """Ruta resuelta al modelo (derivada de OMNIVOICE_MODEL_ID via HuggingFace)."""
-        return self.OMNIVOICE_MODEL_ID
-
-    @property
-    def python_bin(self) -> Path:
-        """Ruta al ejecutable de Python en el entorno virtual."""
-        if os.name == "nt":  # Windows
-            return self.OMNIVOICE_VENV_DIR / "Scripts" / "python.exe"
-        else:  # Unix/Linux/macOS
-            return self.OMNIVOICE_VENV_DIR / "bin" / "python"
 
 
 def get_settings() -> Settings:
