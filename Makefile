@@ -75,6 +75,8 @@ install:
 	$(PYTHON) -m pip install --upgrade pip
 	@echo "Instalando dependencias del proyecto..."
 	$(PIP) install -e ".[dev]"
+	@echo "Instalando OmniVoice desde git..."
+	$(PIP) install git+https://github.com/k2-fsa/OmniVoice.git
 	@echo "Entorno virtual creado y dependencias instaladas en $(VENV)"
 
 # Tests
