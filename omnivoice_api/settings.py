@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     OMNIVOICE_WARMUP_ON_START: bool = False
     OMNIVOICE_DEVICE: str = "cuda:0"
     OMNIVOICE_LANGUAGES: str = "es,en,zh,ja,ko,fr,de"
+    OMNIVOICE_VENV_DIR: Path = Path(".venv")
     MAX_REFERENCE_DURATION_SEC: int = 30
     ENGINE_CONCURRENCY: int = 1
     ENGINE_REQUEST_TIMEOUT_SEC: int = 120
