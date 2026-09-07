@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     OMNIVOICE_DEVICE: str = "cuda:0"
     OMNIVOICE_LANGUAGES: str = "es,en,zh,ja,ko,fr,de"
     OMNIVOICE_VENV_DIR: Path = Path(".venv")
+    OMNIVOICE_CLI_MODULE: str = "omnivoice.cli"
     MAX_REFERENCE_DURATION_SEC: int = 30
     ENGINE_CONCURRENCY: int = 1
     ENGINE_REQUEST_TIMEOUT_SEC: int = 120
@@ -68,6 +69,14 @@ class Settings(BaseSettings):
     def model_path(self) -> Path:
         """Ruta resuelta al modelo (derivada de OMNIVOICE_MODEL_ID via HuggingFace)."""
         return self.OMNIVOICE_MODEL_ID
+
+    @property
+    def python_bin(self) -> Path:
+        """Ruta al ejecutable de Python en el entorno virtual."""
+        if os.name == "nt":  # Windows
+            return self.OMNIVOICE_VENV_DIR / "Scripts" / "python.exe"
+        else:  # Unix/Linux/macOS
+            return self.OMNIVOICE_VENV_DIR / "bin" / "python"
 
 
 def get_settings() -> Settings:
