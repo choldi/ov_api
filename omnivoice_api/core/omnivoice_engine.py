@@ -103,9 +103,12 @@ def _get_dtype() -> torch.dtype:
 class OmniVoiceEngine:
     """
     Implementación del motor OmniVoice usando la API de Python directamente.
-    
+
     Si OMNIVOICE_USE_MOCK=True, genera tonos de prueba.
     Si OMNIVOICE_USE_MOCK=False, usa el motor OmniVoice real.
+    Si el motor real falla al inicializar y OMNIVOICE_FALLBACK_TO_MOCK=True,
+    conmuta automáticamente a modo mock y guarda la causa raíz en
+    ``_real_engine_error`` (expuesta vía health_check).
     """
 
     _instance: OmniVoiceEngine | None = None
@@ -126,6 +129,15 @@ class OmniVoiceEngine:
         self._stock_voices: list[dict] = []
         self._emotions: list[str] = ["neutral", "happy", "sad", "angry", "surprised"]
         self._use_mock: bool = self._settings.OMNIVOICE_USE_MOCK
+        self._real_engine_error: str | None = None
+
+    def _activate_mock_mode(self, reason: str | None = None) -> None:
+        """Conmuta el engine a modo mock (tonos de prueba)."""
+        self._use_mock = True
+        self._model = None
+        if reason:
+            self._real_engine_error = reason
+        self._stock_voices = self._get_mock_stock_voices()
 
     async def initialize(self) -> None:
         """Inicializa el modelo."""
@@ -135,21 +147,22 @@ class OmniVoiceEngine:
         logger.info("Initializing OmniVoice engine...")
         self._settings = get_settings()
         self._use_mock = self._settings.OMNIVOICE_USE_MOCK
+        self._real_engine_error = None
         logger.info("OMNIVOICE_USE_MOCK=%s", self._use_mock)
 
         if self._use_mock:
             logger.warning("MODO MOCK: generando tonos de prueba")
-            self._stock_voices = self._get_mock_stock_voices()
+            self._activate_mock_mode()
             await self.warmup()
             logger.info("Mock engine inicializado")
             return
 
         # Modo REAL: cargar modelo OmniVoice usando la API de Python
         logger.info("Modo REAL: cargando OmniVoice...")
-        
+
         try:
             from omnivoice import OmniVoice
-            
+
             self._model = OmniVoice.from_pretrained(
                 self._settings.OMNIVOICE_MODEL_ID,
                 device_map=self._settings.OMNIVOICE_DEVICE,
@@ -159,8 +172,22 @@ class OmniVoiceEngine:
             await self.warmup()
             logger.info("Engine OmniVoice REAL inicializado")
         except Exception as e:
-            logger.error("Error cargando OmniVoice: %s", e)
-            raise EngineUnavailableError(f"No se pudo cargar el modelo OmniVoice: {e}")
+            error_msg = f"{type(e).__name__}: {e}"
+            if self._settings.OMNIVOICE_FALLBACK_TO_MOCK:
+                logger.error(
+                    "Fallo al cargar el motor REAL de OmniVoice: %s. "
+                    "OMNIVOICE_FALLBACK_TO_MOCK=true → conmutando a modo MOCK "
+                    "(tonos de prueba). La API seguirá funcionando en modo degradado.",
+                    error_msg,
+                )
+                self._activate_mock_mode(reason=error_msg)
+                await self.warmup()
+                logger.info("Mock engine inicializado como fallback")
+                return
+            logger.error("Error cargando OmniVoice: %s", error_msg)
+            raise EngineUnavailableError(
+                f"No se pudo cargar el modelo OmniVoice: {error_msg}"
+            ) from e
 
     async def warmup(self) -> None:
         """Verifica que el modelo responde."""
@@ -169,7 +196,7 @@ class OmniVoiceEngine:
             return
 
         logger.info("Warmup: probando síntesis...")
-        
+
         try:
             # Warmup con una síntesis simple usando num_step=32 (valor por defecto)
             import numpy as np
@@ -215,14 +242,14 @@ class OmniVoiceEngine:
         """Convierte emoción a instrucción de voz."""
         if not emotion:
             return None
-        
+
         intensity_suffix = ""
         if intensity is not None:
             if intensity > 0.7:
                 intensity_suffix = ", very expressive"
             elif intensity < 0.3:
                 intensity_suffix = ", subtle"
-        
+
         emotion_map = {
             "neutral": "neutral tone",
             "happy": "happy" + intensity_suffix,
@@ -230,40 +257,40 @@ class OmniVoiceEngine:
             "angry": "angry" + intensity_suffix,
             "surprised": "surprised" + intensity_suffix,
         }
-        
+
         return emotion_map.get(emotion)
 
     def _build_instruct(self, voice_id: str, emotion: str | None = None, intensity: float | None = None) -> str:
         """Construye la instrucción completa para voice design."""
         base_instruct = STOCK_VOICE_INSTRUCTS.get(voice_id, "natural voice")
-        
+
         emotion_instruct = self._emotion_to_instruct(emotion, intensity)
         if emotion_instruct:
             return f"{base_instruct}, {emotion_instruct}"
-        
+
         return base_instruct
 
     def _numpy_to_wav(self, audio: list) -> bytes:
         """Convierte lista de numpy arrays a WAV bytes.
-        
-        Según la documentación de OmniVoice, el audio devuelto es una lista de 
+
+        Según la documentación de OmniVoice, el audio devuelto es una lista de
         np.ndarray con forma (T,) a 24 kHz.
         """
         import numpy as np
-        
+
         if not audio or len(audio) == 0:
             raise EngineUnavailableError("El modelo no generó audio")
-        
+
         # Concatenar todos los chunks
         audio_data = np.concatenate(audio) if len(audio) > 1 else audio[0]
-        
+
         # Normalizar a float32 en rango [-1, 1] si es necesario
         if audio_data.dtype != np.float32:
             audio_data = audio_data.astype(np.float32)
-        
+
         # Escalar a int16 para WAV
         audio_int16 = (audio_data * 32767).astype(np.int16)
-        
+
         # Escribir a BytesIO como WAV (24 kHz, 1 canal)
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
@@ -271,7 +298,7 @@ class OmniVoiceEngine:
             wav_file.setsampwidth(2)  # 16-bit
             wav_file.setframerate(24000)
             wav_file.writeframes(audio_int16.tobytes())
-        
+
         return buffer.getvalue()
 
     async def synthesize_stock(
@@ -285,7 +312,7 @@ class OmniVoiceEngine:
         intensity: float | None = None,
     ) -> bytes:
         """Sintetiza con voz stock usando voice design.
-        
+
         Según la documentación de OmniVoice:
         - Voice Design: model.generate(text="...", instruct="female, low pitch, british accent")
         """
@@ -310,7 +337,7 @@ class OmniVoiceEngine:
 
         # Modo REAL: usar voice design con model.generate()
         instruct = self._build_instruct(voice_id, emotion, intensity)
-        
+
         try:
             # Ejecutar en thread pool para no bloquear
             # Según el README: model.generate(text=..., instruct=..., speed=...)
@@ -320,9 +347,9 @@ class OmniVoiceEngine:
                 instruct=instruct,
                 speed=speed,
             )
-            
+
             return self._numpy_to_wav(audio)
-            
+
         except Exception as e:
             logger.error("Error en synthesize_stock: %s", e)
             raise EngineUnavailableError(f"Error sintetizando: {e}")
@@ -337,7 +364,7 @@ class OmniVoiceEngine:
         intensity: float | None = None,
     ) -> bytes:
         """Sintetiza con voz clonada.
-        
+
         Según la documentación de OmniVoice:
         - Voice Cloning: model.generate(text=..., ref_audio=..., ref_text=...)
         - Si se omite ref_text, se usa Whisper ASR para auto-transcribir.
@@ -370,9 +397,9 @@ class OmniVoiceEngine:
                 text=text,
                 ref_audio=reference_audio_path,
             )
-            
+
             return self._numpy_to_wav(audio)
-            
+
         except Exception as e:
             logger.error("Error en synthesize_clone: %s", e)
             raise EngineUnavailableError(f"Error sintetizando con voz clonada: {e}")
@@ -403,12 +430,13 @@ class OmniVoiceEngine:
             pass
 
         return {
-            "model_loaded": self._model is not None,
+            "model_loaded": self._model is not None or self._use_mock,
             "gpu_available": gpu_available,
             "device": device_info,
             "stock_voices_count": len(self._stock_voices),
             "vram_free_mb": vram_free_mb,
             "mode": "MOCK" if self._use_mock else "REAL",
+            "real_engine_error": self._real_engine_error,
         }
 
     def _generate_test_tone_wav(

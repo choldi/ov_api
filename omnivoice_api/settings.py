@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # Si True, usa generación de tonos mock (útil para tests sin GPU/modelo).
     # Si False (por defecto), usa el motor OmniVoice real.
     OMNIVOICE_USE_MOCK: bool = False
+    # Si True, cuando el motor real falle al arrancar, la API cae
+    # automáticamente al modo mock en lugar de crashear. El endpoint
+    # /api/v1/health devolverá status="degraded" y el campo
+    # real_engine_error con la causa raíz.
+    OMNIVOICE_FALLBACK_TO_MOCK: bool = True
 
     # --- Database ---
     DATABASE_URL: str = "sqlite:///storage/omnivoice.db"

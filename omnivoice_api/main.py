@@ -33,7 +33,7 @@ logger.info(
 def _force_proactor_loop_factory() -> asyncio.AbstractEventLoop:
     """
     Factory que devuelve un nuevo event loop compatible con subprocess en Windows.
-    
+
     Para usar con uvicorn:
         uvicorn omnivoice_api.main:app --loop-factory=omnivoice_api.main:_force_proactor_loop_factory
     """
@@ -75,11 +75,29 @@ async def lifespan(app: FastAPI):
 
     logger.info("Application startup: inicializando engine OmniVoice...")
     try:
-        await get_engine()
-        logger.info("Engine OmniVoice inicializado correctamente")
+        engine = await get_engine()
+        if engine._use_mock and engine._real_engine_error:
+            logger.warning(
+                "Engine en modo DEGRADADO (mock por fallback). "
+                "Causa raíz: %s",
+                engine._real_engine_error,
+            )
+        else:
+            logger.info("Engine OmniVoice inicializado correctamente")
     except Exception as e:
-        logger.exception("Fallo inicializando engine: %s", e)
-        raise
+        settings = get_settings()
+        if settings.OMNIVOICE_FALLBACK_TO_MOCK:
+            # No tumbamos la app: el engine ya habrá conmutado a mock o,
+            # si el fallo se produjo fuera de initialize(), la API arranca
+            # igualmente y /health reportará el estado degradado.
+            logger.exception(
+                "Fallo inicializando engine, pero OMNIVOICE_FALLBACK_TO_MOCK=true: "
+                "la API arrancará en modo degradado. Error: %s",
+                e,
+            )
+        else:
+            logger.exception("Fallo inicializando engine: %s", e)
+            raise
     yield
     logger.info("Application shutdown: cerrando engine OmniVoice...")
     await close_engine()
@@ -113,12 +131,14 @@ async def health_check() -> JSONResponse:
     engine = await get_engine()
     health = await engine.health_check()
     settings = get_settings()
+    degraded = health.get("mode") == "MOCK" and health.get("real_engine_error")
     return JSONResponse(
         content={
-            "status": "ok" if health["model_loaded"] else "degraded",
+            "status": "degraded" if degraded else ("ok" if health["model_loaded"] else "degraded"),
             "version": settings.APP_VERSION,
             "device": health["device"],
             "mode": health.get("mode", "UNKNOWN"),
+            "real_engine_error": health.get("real_engine_error"),
         }
     )
 
@@ -163,7 +183,7 @@ async def root() -> JSONResponse:
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     if sys.platform == "win32":
         # En Windows, uvicorn debe usar el loop factory para ProactorEventLoop
         uvicorn.run(
