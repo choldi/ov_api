@@ -65,7 +65,7 @@ dependencies = [
     #"torchaudio>=2.4.0,<2.5.0",
     "torch==2.5.1",
     "torchaudio==2.5.1",
-    "pytorch-cuda=12.4"
+    "pytorch-cuda==12.4"
 ]
 
 [project.optional-dependencies]
