@@ -105,7 +105,7 @@ class OmniVoiceEngine:
     Implementación del motor OmniVoice usando la API de Python directamente.
     
     Si OMNIVOICE_USE_MOCK=True, genera tonos de prueba.
-    Si OMNIVOICE_USE_MOCK=False, usa OmniVoice.from_pretrained().
+    Si OMNIVOICE_USE_MOCK=False, usa el motor OmniVoice real.
     """
 
     _instance: OmniVoiceEngine | None = None
@@ -144,7 +144,7 @@ class OmniVoiceEngine:
             logger.info("Mock engine inicializado")
             return
 
-        # Modo REAL: cargar modelo OmniVoice
+        # Modo REAL: cargar modelo OmniVoice usando la API de Python
         logger.info("Modo REAL: cargando OmniVoice...")
         
         try:
@@ -171,11 +171,11 @@ class OmniVoiceEngine:
         logger.info("Warmup: probando síntesis...")
         
         try:
-            # Warmup con una síntesis simple
+            # Warmup con una síntesis simple usando num_step=32 (valor por defecto)
             import numpy as np
             audio = self._model.generate(
                 text=".",
-                num_step=1,  # Mínimo para warmup
+                num_step=32,
             )
             if audio and len(audio) > 0:
                 logger.info("Warmup OK")
@@ -208,7 +208,7 @@ class OmniVoiceEngine:
             {"voice_id": "ja-jp-male", "language": "ja", "gender": "male", "name": "Japanese Male"},
             {"voice_id": "ja-jp-female", "language": "ja", "gender": "female", "name": "Japanese Female"},
             {"voice_id": "ko-kr-male", "language": "ko", "gender": "male", "name": "Korean Male"},
-            {"voice_id": "ko-kr-female", "language": "ko", "gender": "female", "name": "Korean Male"},
+            {"voice_id": "ko-kr-female", "language": "ko", "gender": "male", "name": "Korean Male"},
         ]
 
     def _emotion_to_instruct(self, emotion: str | None, intensity: float | None = None) -> str | None:
@@ -244,7 +244,11 @@ class OmniVoiceEngine:
         return base_instruct
 
     def _numpy_to_wav(self, audio: list) -> bytes:
-        """Convierte lista de numpy arrays a WAV bytes."""
+        """Convierte lista de numpy arrays a WAV bytes.
+        
+        Según la documentación de OmniVoice, el audio devuelto es una lista de 
+        np.ndarray con forma (T,) a 24 kHz.
+        """
         import numpy as np
         
         if not audio or len(audio) == 0:
@@ -280,7 +284,11 @@ class OmniVoiceEngine:
         emotion: str | None = None,
         intensity: float | None = None,
     ) -> bytes:
-        """Sintetiza con voz stock (voice design)."""
+        """Sintetiza con voz stock usando voice design.
+        
+        Según la documentación de OmniVoice:
+        - Voice Design: model.generate(text="...", instruct="female, low pitch, british accent")
+        """
         logger.debug("synthesize_stock: voice_id=%s, text_len=%d", voice_id, len(text))
 
         # Verificar que la voz existe
@@ -300,11 +308,12 @@ class OmniVoiceEngine:
                 amplitude=0.3,
             )
 
-        # Modo REAL: usar voice design
+        # Modo REAL: usar voice design con model.generate()
         instruct = self._build_instruct(voice_id, emotion, intensity)
         
         try:
             # Ejecutar en thread pool para no bloquear
+            # Según el README: model.generate(text=..., instruct=..., speed=...)
             audio = await asyncio.to_thread(
                 self._model.generate,
                 text=text,
@@ -327,7 +336,12 @@ class OmniVoiceEngine:
         emotion: str | None = None,
         intensity: float | None = None,
     ) -> bytes:
-        """Sintetiza con voz clonada."""
+        """Sintetiza con voz clonada.
+        
+        Según la documentación de OmniVoice:
+        - Voice Cloning: model.generate(text=..., ref_audio=..., ref_text=...)
+        - Si se omite ref_text, se usa Whisper ASR para auto-transcribir.
+        """
         logger.debug("synthesize_clone: ref=%s, text_len=%d", reference_audio_path, len(text))
 
         import os
@@ -346,7 +360,9 @@ class OmniVoiceEngine:
                 amplitude=0.3,
             )
 
-        # Modo REAL: usar voice cloning
+        # Modo REAL: usar voice cloning con model.generate()
+        # Según el README: model.generate(text=..., ref_audio=...)
+        # ref_text es opcional (Whisper auto-transcribe si se omite)
         try:
             # Ejecutar en thread pool para no bloquear
             audio = await asyncio.to_thread(
