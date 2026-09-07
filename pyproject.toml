@@ -63,8 +63,8 @@ dependencies = [
     # Si tu plataforma no es CUDA 12.1, override con --index-url.
     #"torch>=2.4.0,<2.5.0",
     #"torchaudio>=2.4.0,<2.5.0",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
+    "torch==2.5.1+cu124",
+    "torchaudio==2.5.1+cu124"
 ]
 
 [project.optional-dependencies]
