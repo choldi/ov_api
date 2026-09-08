@@ -100,6 +100,59 @@ def _get_dtype() -> torch.dtype:
     return dtype_map.get(settings.OMNIVOICE_DTYPE, torch.float16)
 
 
+def _validate_cuda_device(device: str) -> None:
+    """
+    Valida que el dispositivo CUDA especificado sea coherente con la disponibilidad de GPU.
+
+    Args:
+        device: String del dispositivo (ej. "cuda:0", "cpu")
+
+    Raises:
+        EngineUnavailableError: Si hay inconsistencia entre el dispositivo solicitado y la disponibilidad real.
+    """
+    if not device.startswith("cuda"):
+        # Si no es CUDA (ej. "cpu"), no hay validación que hacer
+        return
+
+    if not torch.cuda.is_available():
+        raise EngineUnavailableError(
+            f"Se solicitó dispositivo CUDA '{device}' pero torch.cuda.is_available() es False. "
+            "Verifica que CUDA esté instalado y que la GPU sea accesible."
+        )
+
+    # Extraer el índice del dispositivo (ej. "cuda:0" -> 0)
+    try:
+        if ":" in device:
+            device_index = int(device.split(":")[1])
+        else:
+            device_index = 0
+    except (ValueError, IndexError):
+        raise EngineUnavailableError(
+            f"Formato de dispositivo CUDA inválido: '{device}'. "
+            "Use formato 'cuda:X' donde X es el índice del dispositivo (ej. 'cuda:0')."
+        )
+
+    # Verificar que el índice del dispositivo existe
+    device_count = torch.cuda.device_count()
+    if device_index >= device_count:
+        raise EngineUnavailableError(
+            f"Dispositivo CUDA '{device}' no existe. "
+            f"Dispositivos disponibles: 0 a {device_count - 1} (total: {device_count})."
+        )
+
+    # Verificar que el dispositivo tiene memoria suficiente (al menos 100 MB libres)
+    try:
+        free_mem, total_mem = torch.cuda.mem_get_info(device_index)
+        free_mb = free_mem // (1024 * 1024)
+        if free_mb < 100:
+            raise EngineUnavailableError(
+                f"Dispositivo CUDA '{device}' tiene muy poca memoria libre: {free_mb} MB. "
+                f"Se requieren al menos 100 MB libres. Memoria total: {total_mem // (1024 * 1024)} MB."
+            )
+    except Exception as e:
+        logger.warning("No se pudo verificar memoria de CUDA device %s: %s", device, e)
+
+
 class OmniVoiceEngine:
     """
     Implementación del motor OmniVoice usando la API de Python directamente.
@@ -149,6 +202,24 @@ class OmniVoiceEngine:
         self._use_mock = self._settings.OMNIVOICE_USE_MOCK
         self._real_engine_error = None
         logger.info("OMNIVOICE_USE_MOCK=%s", self._use_mock)
+
+        # Validar dispositivo CUDA al arranque (solo si no estamos en modo mock)
+        if not self._use_mock:
+            try:
+                _validate_cuda_device(self._settings.OMNIVOICE_DEVICE)
+                logger.info("Validación CUDA OK: device=%s", self._settings.OMNIVOICE_DEVICE)
+            except EngineUnavailableError as e:
+                if self._settings.OMNIVOICE_FALLBACK_TO_MOCK:
+                    logger.error(
+                        "Validación CUDA falló: %s. "
+                        "OMNIVOICE_FALLBACK_TO_MOCK=true → conmutando a modo MOCK.",
+                        e,
+                    )
+                    self._activate_mock_mode(reason=str(e))
+                    await self.warmup()
+                    logger.info("Mock engine inicializado como fallback tras fallo CUDA")
+                    return
+                raise
 
         if self._use_mock:
             logger.warning("MODO MOCK: generando tonos de prueba")
@@ -235,7 +306,7 @@ class OmniVoiceEngine:
             {"voice_id": "ja-jp-male", "language": "ja", "gender": "male", "name": "Japanese Male"},
             {"voice_id": "ja-jp-female", "language": "ja", "gender": "female", "name": "Japanese Female"},
             {"voice_id": "ko-kr-male", "language": "ko", "gender": "male", "name": "Korean Male"},
-            {"voice_id": "ko-kr-female", "language": "ko", "gender": "male", "name": "Korean Male"},
+            {"voice_id": "ko-kr-female", "language": "ko", "gender": "female", "name": "Korean Female"},
         ]
 
     def _emotion_to_instruct(self, emotion: str | None, intensity: float | None = None) -> str | None:
