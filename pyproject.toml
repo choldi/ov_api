@@ -61,8 +61,8 @@ dependencies = [
     # torch y torchaudio DEBEN estar en la misma versión CUDA para evitar
     # el error "undefined symbol _ZN3c106detail23torchLibraryImpl...".
     # Si tu plataforma no es CUDA 12.1, override con --index-url.
-    "torch==2.5.1+cu124",
-    "torchaudio==2.5.1+cu124",
+    "torch==2.5.1",
+    "torchaudio==2.5.1",
 ]
 
 [project.optional-dependencies]
