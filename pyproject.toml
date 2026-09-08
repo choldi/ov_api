@@ -28,7 +28,7 @@ classifiers = [
 #   C:\AI\TTS\OMNIVOICE\omnivoice_env     (venv con CUDA/PyTorch)
 # Ver docs/INSTALLATION.md y ArchitectureReview.md.
 #
-# torch/torchaudio se pinean a 2.4.0+cu121 para compatibilidad con GPUs
+# torch/torchaudio se pinean a 2.5.1+cu124 para compatibilidad con GPUs
 # Pascal (P2000, GTX 10xx, CC 6.x) que NO soportan CUDA 12.4+.
 # Si necesitas otra versión, override con:
 #   pip install torch==X.Y.Z+cuXXX torchaudio==X.Y.Z+cuXXX \
@@ -63,9 +63,8 @@ dependencies = [
     # Si tu plataforma no es CUDA 12.1, override con --index-url.
     #"torch>=2.4.0,<2.5.0",
     #"torchaudio>=2.4.0,<2.5.0",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
-    "pytorch-cuda==12.4"
+    "torch==2.5.1+cu124",
+    "torchaudio==2.5.1+cu124",
 ]
 
 [project.optional-dependencies]
@@ -87,6 +86,15 @@ load = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["omnivoice_api*"]
+
+[tool.uv]
+# Índice explícito para los paquetes de PyTorch con CUDA 12.4.
+# Solo se usa para `torch` y `torchaudio` (gracias a `explicit = true`),
+# el resto de dependencias se resuelven desde PyPI.
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [tool.ruff]
 line-length = 100
