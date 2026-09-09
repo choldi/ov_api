@@ -71,6 +71,11 @@ class Settings(BaseSettings):
         from omnivoice_api.core.engine_paths import default_install_dir
         return default_install_dir() / "models"
 
+    @property
+    def omnilang_list(self) -> list[str]:
+        """Idiomas soportados por OmniVoice."""
+        return ["es", "en", "fr", "de", "it", "pt", "zh", "ja", "ko"]
+
 
 def get_settings() -> Settings:
     """Obtener una nueva instancia de configuración que lee las variables de entorno actuales."""
