@@ -7,8 +7,8 @@ import sys
 # --- Configuración del Event Loop Policy ---
 # DEBE ejecutarse ANTES de que uvicorn cree el event loop.
 # En Windows, el SelectorEventLoop (default de uvicorn) NO soporta subprocesses
-# (asyncio.create_subprocess_exec -> NotImplementedError). El engine invoca el
-# CLI de OmniVoice vía subprocess, por lo que forzamos ProactorEventLoop.
+# (asyncio.create_subprocess_exec -> NotImplementedError). Forzamos
+# ProactorEventLoop para compatibilidad con internos de OmniVoice/torch.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     _EVENT_LOOP_POLICY_NAME = "WindowsProactorEventLoopPolicy"

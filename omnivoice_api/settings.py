@@ -59,6 +59,18 @@ class Settings(BaseSettings):
         """Lista de orígenes CORS como lista de strings."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
+    @property
+    def python_bin(self) -> Path:
+        """Ruta al python del venv externo de OmniVoice."""
+        from omnivoice_api.core.engine_paths import python_bin_from_venv, default_venv_dir
+        return python_bin_from_venv(default_venv_dir())
+
+    @property
+    def model_path(self) -> Path:
+        """Ruta al modelo OmniVoice descargado."""
+        from omnivoice_api.core.engine_paths import default_install_dir
+        return default_install_dir() / "models"
+
 
 def get_settings() -> Settings:
     """Obtener una nueva instancia de configuración que lee las variables de entorno actuales."""
