@@ -8,19 +8,123 @@ import logging
 import math
 import struct
 import wave
-from pathlib import Path
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 import torch
 
 from omnivoice_api.settings import get_settings
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
-    UnsupportedEmotionError,
+    UnsupportedInstructError,
     VoiceNotFoundError,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# --- Tokens válidos para instructs de OmniVoice ---
+# El modelo SOLO acepta estos tokens exactos (en inglés o chino).
+VALID_INSTRUCT_TOKENS_EN: list[str] = [
+    "male", "female",
+    "child", "teenager", "young adult", "middle-aged", "elderly",
+    "very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch",
+    "whisper",
+    "american accent", "australian accent", "british accent", "canadian accent",
+    "chinese accent", "indian accent", "japanese accent", "korean accent",
+    "portuguese accent", "russian accent",
+]
+
+# Mapeo de voces stock a instructs válidos para model.generate(instruct=...).
+STOCK_VOICE_INSTRUCTS: dict[str, str] = {
+    "es-mx-male": "male, portuguese accent",
+    "es-mx-female": "female, portuguese accent",
+    "es-es-male": "male, portuguese accent",
+    "es-es-female": "female, portuguese accent",
+    "en-us-male": "male, american accent",
+    "en-us-female": "female, american accent",
+    "en-gb-male": "male, british accent",
+    "en-gb-female": "female, british accent",
+    "fr-fr-male": "male",
+    "fr-fr-female": "female",
+    "de-de-male": "male",
+    "de-de-female": "female",
+    "it-it-male": "male",
+    "it-it-female": "female",
+    "pt-br-male": "male, portuguese accent",
+    "pt-br-female": "female, portuguese accent",
+    "zh-cn-male": "男",
+    "zh-cn-female": "女",
+    "ja-jp-male": "male, japanese accent",
+    "ja-jp-female": "female, japanese accent",
+    "ko-kr-male": "male, korean accent",
+    "ko-kr-female": "female, korean accent",
+}
+
+# Tokens chinos válidos (full-width comma `，` para separar).
+VALID_INSTRUCT_TOKENS_ZH: list[str] = [
+    "男", "女",
+    "儿童", "少年", "青年", "中年", "老年",
+    "极低音调", "低音调", "中音调", "高音调", "极高音调",
+    "耳语",
+    "河南话", "陕西话", "四川话", "贵州话", "云南话", "桂林话",
+    "济南话", "石家庄话", "甘肃话", "宁夏话", "青岛话", "东北话",
+]
+
+
+def _validate_instruct(instruct: str) -> None:
+    """Valida que el instruct contenga solo tokens soportados por el modelo."""
+    tokens = [t.strip().lower() for t in instruct.split(",")]
+    # Normalizar tokens chinos (full-width comma → half-width)
+    all_valid = set(t.lower() for t in VALID_INSTRUCT_TOKENS_EN) | set(VALID_INSTRUCT_TOKENS_ZH)
+    invalid: dict[str, str | None] = {}
+
+    for token in tokens:
+        if token and token not in all_valid:
+            suggestion = None
+            for valid in list(VALID_INSTRUCT_TOKENS_EN) + VALID_INSTRUCT_TOKENS_ZH:
+                if valid in token or token in valid:
+                    suggestion = valid
+                    break
+            invalid[token] = suggestion
+
+    if invalid:
+        raise UnsupportedInstructError(instruct, invalid, list(VALID_INSTRUCT_TOKENS_EN) + VALID_INSTRUCT_TOKENS_ZH)
+
+
+@dataclass
+class GenerationParams:
+    """Parámetros de generación de OmniVoice.
+
+    Todos los campos son opcionales. Los valores por defecto coinciden con
+    los de OmniVoice.
+    """
+    num_step: int = 32
+    denoise: bool = True
+    guidance_scale: float = 2.0
+    duration: float | None = None
+    preprocess_prompt: bool = True
+    postprocess_output: bool = True
+    pad_duration: float = 0.1
+    fade_duration: float = 0.1
+    audio_chunk_duration: float = 15.0
+    audio_chunk_threshold: float = 30.0
+
+    def to_kwargs(self) -> dict[str, Any]:
+        """Convierte a kwargs para model.generate(), omitiendo None/defaults."""
+        result: dict[str, Any] = {}
+        result["num_step"] = self.num_step
+        result["denoise"] = self.denoise
+        result["guidance_scale"] = self.guidance_scale
+        if self.duration is not None:
+            result["duration"] = self.duration
+        result["preprocess_prompt"] = self.preprocess_prompt
+        result["postprocess_output"] = self.postprocess_output
+        result["pad_duration"] = self.pad_duration
+        result["fade_duration"] = self.fade_duration
+        result["audio_chunk_duration"] = self.audio_chunk_duration
+        result["audio_chunk_threshold"] = self.audio_chunk_threshold
+        return result
 
 
 class OmniVoiceEngineInterface(Protocol):
@@ -31,10 +135,18 @@ class OmniVoiceEngineInterface(Protocol):
         *,
         text: str,
         voice_id: str,
-        language: str | None = None,
         speed: float = 1.0,
-        emotion: str | None = None,
-        intensity: float | None = None,
+        generation_params: GenerationParams | None = None,
+    ) -> bytes:
+        ...
+
+    async def synthesize_instruct(
+        self,
+        *,
+        text: str,
+        instruct: str,
+        speed: float = 1.0,
+        generation_params: GenerationParams | None = None,
     ) -> bytes:
         ...
 
@@ -43,16 +155,13 @@ class OmniVoiceEngineInterface(Protocol):
         *,
         text: str,
         reference_audio_path: str,
-        language: str | None = None,
-        emotion: str | None = None,
-        intensity: float | None = None,
+        instruct: str | None = None,
+        speed: float = 1.0,
+        generation_params: GenerationParams | None = None,
     ) -> bytes:
         ...
 
     async def list_stock_voices(self, language: str | None = None) -> list[dict]:
-        ...
-
-    async def list_emotions(self) -> list[str]:
         ...
 
     async def health_check(self) -> dict:
@@ -60,33 +169,6 @@ class OmniVoiceEngineInterface(Protocol):
 
     async def warmup(self) -> None:
         ...
-
-
-# Mapeo de voces stock a instrucciones de voz design
-STOCK_VOICE_INSTRUCTS: dict[str, str] = {
-    "es-mx-male": "male voice, Mexican Spanish accent",
-    "es-mx-female": "female voice, Mexican Spanish accent",
-    "es-es-male": "male voice, Spanish Spain accent",
-    "es-es-female": "female voice, Spanish Spain accent",
-    "en-us-male": "male voice, American English accent",
-    "en-us-female": "female voice, American English accent",
-    "en-gb-male": "male voice, British English accent",
-    "en-gb-female": "female voice, British English accent",
-    "fr-fr-male": "male voice, French accent",
-    "fr-fr-female": "female voice, French accent",
-    "de-de-male": "male voice, German accent",
-    "de-de-female": "female voice, German accent",
-    "it-it-male": "male voice, Italian accent",
-    "it-it-female": "female voice, Italian accent",
-    "pt-br-male": "male voice, Brazilian Portuguese accent",
-    "pt-br-female": "female voice, Brazilian Portuguese accent",
-    "zh-cn-male": "male voice, Mandarin Chinese accent",
-    "zh-cn-female": "female voice, Mandarin Chinese accent",
-    "ja-jp-male": "male voice, Japanese accent",
-    "ja-jp-female": "female voice, Japanese accent",
-    "ko-kr-male": "male voice, Korean accent",
-    "ko-kr-female": "female voice, Korean accent",
-}
 
 
 def _get_dtype() -> torch.dtype:
@@ -101,17 +183,8 @@ def _get_dtype() -> torch.dtype:
 
 
 def _validate_cuda_device(device: str) -> None:
-    """
-    Valida que el dispositivo CUDA especificado sea coherente con la disponibilidad de GPU.
-
-    Args:
-        device: String del dispositivo (ej. "cuda:0", "cpu")
-
-    Raises:
-        EngineUnavailableError: Si hay inconsistencia entre el dispositivo solicitado y la disponibilidad real.
-    """
+    """Valida que el dispositivo CUDA especificado sea coherente con la disponibilidad de GPU."""
     if not device.startswith("cuda"):
-        # Si no es CUDA (ej. "cpu"), no hay validación que hacer
         return
 
     if not torch.cuda.is_available():
@@ -120,19 +193,14 @@ def _validate_cuda_device(device: str) -> None:
             "Verifica que CUDA esté instalado y que la GPU sea accesible."
         )
 
-    # Extraer el índice del dispositivo (ej. "cuda:0" -> 0)
     try:
-        if ":" in device:
-            device_index = int(device.split(":")[1])
-        else:
-            device_index = 0
+        device_index = int(device.split(":")[1]) if ":" in device else 0
     except (ValueError, IndexError):
         raise EngineUnavailableError(
             f"Formato de dispositivo CUDA inválido: '{device}'. "
             "Use formato 'cuda:X' donde X es el índice del dispositivo (ej. 'cuda:0')."
         )
 
-    # Verificar que el índice del dispositivo existe
     device_count = torch.cuda.device_count()
     if device_index >= device_count:
         raise EngineUnavailableError(
@@ -140,7 +208,6 @@ def _validate_cuda_device(device: str) -> None:
             f"Dispositivos disponibles: 0 a {device_count - 1} (total: {device_count})."
         )
 
-    # Verificar que el dispositivo tiene memoria suficiente (al menos 100 MB libres)
     try:
         free_mem, total_mem = torch.cuda.mem_get_info(device_index)
         free_mb = free_mem // (1024 * 1024)
@@ -154,15 +221,7 @@ def _validate_cuda_device(device: str) -> None:
 
 
 class OmniVoiceEngine:
-    """
-    Implementación del motor OmniVoice usando la API de Python directamente.
-
-    Si OMNIVOICE_USE_MOCK=True, genera tonos de prueba.
-    Si OMNIVOICE_USE_MOCK=False, usa el motor OmniVoice real.
-    Si el motor real falla al inicializar y OMNIVOICE_FALLBACK_TO_MOCK=True,
-    conmuta automáticamente a modo mock y guarda la causa raíz en
-    ``_real_engine_error`` (expuesta vía health_check).
-    """
+    """Implementación del motor OmniVoice usando la API de Python directamente."""
 
     _instance: OmniVoiceEngine | None = None
     _initialized: bool = False
@@ -181,8 +240,7 @@ class OmniVoiceEngine:
         self._device = self._settings.OMNIVOICE_DEVICE
         self._model = None
         self._stock_voices: list[dict] = []
-        self._emotions: list[str] = ["neutral", "happy", "sad", "angry", "surprised"]
-        self._use_mock: bool = self._settings.OMNIVOICE_USE_MOCK
+        self._use_mock: bool = self._settings.OMNVOICE_USE_MOCK if hasattr(self._settings, 'OMNVOICE_USE_MOCK') else self._settings.OMNIVOICE_USE_MOCK
         self._real_engine_error: str | None = None
 
     def _activate_mock_mode(self, reason: str | None = None) -> None:
@@ -204,7 +262,6 @@ class OmniVoiceEngine:
         self._real_engine_error = None
         logger.info("OMNIVOICE_USE_MOCK=%s", self._use_mock)
 
-        # Validar dispositivo CUDA al arranque (solo si no estamos en modo mock)
         if not self._use_mock:
             try:
                 _validate_cuda_device(self._settings.OMNIVOICE_DEVICE)
@@ -212,8 +269,7 @@ class OmniVoiceEngine:
             except EngineUnavailableError as e:
                 if self._settings.OMNIVOICE_FALLBACK_TO_MOCK:
                     logger.error(
-                        "Validación CUDA falló: %s. "
-                        "OMNIVOICE_FALLBACK_TO_MOCK=true → conmutando a modo MOCK.",
+                        "Validación CUDA falló: %s. OMNIVOICE_FALLBACK_TO_MOCK=true → conmutando a modo MOCK.",
                         e,
                     )
                     self._activate_mock_mode(reason=str(e))
@@ -229,9 +285,7 @@ class OmniVoiceEngine:
             logger.info("Mock engine inicializado")
             return
 
-        # Modo REAL: cargar modelo OmniVoice usando la API de Python
         logger.info("Modo REAL: cargando OmniVoice...")
-
         try:
             from omnivoice import OmniVoice
 
@@ -247,35 +301,22 @@ class OmniVoiceEngine:
             error_msg = f"{type(e).__name__}: {e}"
             if self._settings.OMNIVOICE_FALLBACK_TO_MOCK:
                 logger.error(
-                    "Fallo al cargar el motor REAL de OmniVoice: %s. "
-                    "OMNIVOICE_FALLBACK_TO_MOCK=true → conmutando a modo MOCK "
-                    "(tonos de prueba). La API seguirá funcionando en modo degradado.",
+                    "Fallo al cargar el motor REAL: %s. Conmutando a MOCK.",
                     error_msg,
                 )
                 self._activate_mock_mode(reason=error_msg)
                 await self.warmup()
-                logger.info("Mock engine inicializado como fallback")
                 return
-            logger.error("Error cargando OmniVoice: %s", error_msg)
-            raise EngineUnavailableError(
-                f"No se pudo cargar el modelo OmniVoice: {error_msg}"
-            ) from e
+            raise EngineUnavailableError(f"No se pudo cargar el modelo OmniVoice: {error_msg}") from e
 
     async def warmup(self) -> None:
         """Verifica que el modelo responde."""
         if self._use_mock:
             await asyncio.sleep(0.01)
             return
-
         logger.info("Warmup: probando síntesis...")
-
         try:
-            # Warmup con una síntesis simple usando num_step=32 (valor por defecto)
-            import numpy as np
-            audio = self._model.generate(
-                text=".",
-                num_step=32,
-            )
+            audio = self._model.generate(text=".", num_step=32)
             if audio and len(audio) > 0:
                 logger.info("Warmup OK")
             else:
@@ -310,64 +351,33 @@ class OmniVoiceEngine:
             {"voice_id": "ko-kr-female", "language": "ko", "gender": "female", "name": "Korean Female"},
         ]
 
-    def _emotion_to_instruct(self, emotion: str | None, intensity: float | None = None) -> str | None:
-        """Convierte emoción a instrucción de voz."""
-        if not emotion:
-            return None
-
-        intensity_suffix = ""
-        if intensity is not None:
-            if intensity > 0.7:
-                intensity_suffix = ", very expressive"
-            elif intensity < 0.3:
-                intensity_suffix = ", subtle"
-
-        emotion_map = {
-            "neutral": "neutral tone",
-            "happy": "happy" + intensity_suffix,
-            "sad": "sad" + intensity_suffix,
-            "angry": "angry" + intensity_suffix,
-            "surprised": "surprised" + intensity_suffix,
-        }
-
-        return emotion_map.get(emotion)
-
-    def _build_instruct(self, voice_id: str, emotion: str | None = None, intensity: float | None = None) -> str:
-        """Construye la instrucción completa para voice design."""
-        base_instruct = STOCK_VOICE_INSTRUCTS.get(voice_id, "natural voice")
-
-        emotion_instruct = self._emotion_to_instruct(emotion, intensity)
-        if emotion_instruct:
-            return f"{base_instruct}, {emotion_instruct}"
-
-        return base_instruct
+    def _get_instruct_for_voice(self, voice_id: str) -> str:
+        """Obtiene el instruct válido para una voz stock."""
+        instruct = STOCK_VOICE_INSTRUCTS.get(voice_id)
+        if instruct is None:
+            valid_ids = list(STOCK_VOICE_INSTRUCTS.keys())
+            raise VoiceNotFoundError(voice_id, "stock")
+        _validate_instruct(instruct)
+        return instruct
 
     def _numpy_to_wav(self, audio: list) -> bytes:
-        """Convierte lista de numpy arrays a WAV bytes.
-
-        Según la documentación de OmniVoice, el audio devuelto es una lista de
-        np.ndarray con forma (T,) a 24 kHz.
-        """
+        """Convierte lista de numpy arrays a WAV bytes (24 kHz, mono)."""
         import numpy as np
 
         if not audio or len(audio) == 0:
             raise EngineUnavailableError("El modelo no generó audio")
 
-        # Concatenar todos los chunks
         audio_data = np.concatenate(audio) if len(audio) > 1 else audio[0]
 
-        # Normalizar a float32 en rango [-1, 1] si es necesario
         if audio_data.dtype != np.float32:
             audio_data = audio_data.astype(np.float32)
 
-        # Escalar a int16 para WAV
         audio_int16 = (audio_data * 32767).astype(np.int16)
 
-        # Escribir a BytesIO como WAV (24 kHz, 1 canal)
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
             wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)  # 16-bit
+            wav_file.setsampwidth(2)
             wav_file.setframerate(24000)
             wav_file.writeframes(audio_int16.tobytes())
 
@@ -378,26 +388,15 @@ class OmniVoiceEngine:
         *,
         text: str,
         voice_id: str,
-        language: str | None = None,
         speed: float = 1.0,
-        emotion: str | None = None,
-        intensity: float | None = None,
+        generation_params: GenerationParams | None = None,
     ) -> bytes:
-        """Sintetiza con voz stock usando voice design.
-
-        Según la documentación de OmniVoice:
-        - Voice Design: model.generate(text="...", instruct="female, low pitch, british accent")
-        """
+        """Sintetiza con voz stock usando voice design."""
         logger.debug("synthesize_stock: voice_id=%s, text_len=%d", voice_id, len(text))
 
-        # Verificar que la voz existe
         voice = next((v for v in self._stock_voices if v["voice_id"] == voice_id), None)
         if not voice:
             raise VoiceNotFoundError(voice_id, "stock")
-
-        # Validar emoción
-        if emotion and emotion not in self._emotions:
-            raise UnsupportedEmotionError(emotion, self._emotions)
 
         if self._use_mock:
             return self._generate_test_tone_wav(
@@ -407,23 +406,52 @@ class OmniVoiceEngine:
                 amplitude=0.3,
             )
 
-        # Modo REAL: usar voice design con model.generate()
-        instruct = self._build_instruct(voice_id, emotion, intensity)
+        instruct = self._get_instruct_for_voice(voice_id)
+        params = generation_params or GenerationParams()
 
         try:
-            # Ejecutar en thread pool para no bloquear
-            # Según el README: model.generate(text=..., instruct=..., speed=...)
-            audio = await asyncio.to_thread(
-                self._model.generate,
-                text=text,
-                instruct=instruct,
-                speed=speed,
-            )
-
+            kwargs = params.to_kwargs()
+            kwargs["text"] = text
+            kwargs["instruct"] = instruct
+            kwargs["speed"] = speed
+            audio = await asyncio.to_thread(self._model.generate, **kwargs)
             return self._numpy_to_wav(audio)
-
         except Exception as e:
             logger.error("Error en synthesize_stock: %s", e)
+            raise EngineUnavailableError(f"Error sintetizando: {e}")
+
+    async def synthesize_instruct(
+        self,
+        *,
+        text: str,
+        instruct: str,
+        speed: float = 1.0,
+        generation_params: GenerationParams | None = None,
+    ) -> bytes:
+        """Sintetiza con instruct personalizado (voice design libre)."""
+        logger.debug("synthesize_instruct: instruct=%s, text_len=%d", instruct, len(text))
+
+        _validate_instruct(instruct)
+
+        if self._use_mock:
+            return self._generate_test_tone_wav(
+                duration_sec=max(0.5, len(text) * 0.08),
+                sample_rate=22050,
+                frequency=440.0,
+                amplitude=0.3,
+            )
+
+        params = generation_params or GenerationParams()
+
+        try:
+            kwargs = params.to_kwargs()
+            kwargs["text"] = text
+            kwargs["instruct"] = instruct
+            kwargs["speed"] = speed
+            audio = await asyncio.to_thread(self._model.generate, **kwargs)
+            return self._numpy_to_wav(audio)
+        except Exception as e:
+            logger.error("Error en synthesize_instruct: %s", e)
             raise EngineUnavailableError(f"Error sintetizando: {e}")
 
     async def synthesize_clone(
@@ -431,25 +459,16 @@ class OmniVoiceEngine:
         *,
         text: str,
         reference_audio_path: str,
-        language: str | None = None,
-        emotion: str | None = None,
-        intensity: float | None = None,
+        instruct: str | None = None,
+        speed: float = 1.0,
+        generation_params: GenerationParams | None = None,
     ) -> bytes:
-        """Sintetiza con voz clonada.
-
-        Según la documentación de OmniVoice:
-        - Voice Cloning: model.generate(text=..., ref_audio=..., ref_text=...)
-        - Si se omite ref_text, se usa Whisper ASR para auto-transcribir.
-        """
+        """Sintetiza con voz clonada, opcionalmente con instruct."""
         logger.debug("synthesize_clone: ref=%s, text_len=%d", reference_audio_path, len(text))
 
         import os
         if not self._use_mock and not os.path.exists(reference_audio_path):
             raise EngineUnavailableError(f"Reference audio no encontrado: {reference_audio_path}")
-
-        # Validar emoción
-        if emotion and emotion not in self._emotions:
-            raise UnsupportedEmotionError(emotion, self._emotions)
 
         if self._use_mock:
             return self._generate_test_tone_wav(
@@ -459,19 +478,18 @@ class OmniVoiceEngine:
                 amplitude=0.3,
             )
 
-        # Modo REAL: usar voice cloning con model.generate()
-        # Según el README: model.generate(text=..., ref_audio=...)
-        # ref_text es opcional (Whisper auto-transcribe si se omite)
+        params = generation_params or GenerationParams()
+
         try:
-            # Ejecutar en thread pool para no bloquear
-            audio = await asyncio.to_thread(
-                self._model.generate,
-                text=text,
-                ref_audio=reference_audio_path,
-            )
-
+            kwargs = params.to_kwargs()
+            kwargs["text"] = text
+            kwargs["ref_audio"] = reference_audio_path
+            kwargs["speed"] = speed
+            if instruct:
+                _validate_instruct(instruct)
+                kwargs["instruct"] = instruct
+            audio = await asyncio.to_thread(self._model.generate, **kwargs)
             return self._numpy_to_wav(audio)
-
         except Exception as e:
             logger.error("Error en synthesize_clone: %s", e)
             raise EngineUnavailableError(f"Error sintetizando con voz clonada: {e}")
@@ -482,10 +500,6 @@ class OmniVoiceEngine:
         if language:
             voices = [v for v in voices if v["language"] == language]
         return voices
-
-    async def list_emotions(self) -> list[str]:
-        """Lista emociones."""
-        return self._emotions.copy()
 
     async def health_check(self) -> dict:
         """Estado del motor."""

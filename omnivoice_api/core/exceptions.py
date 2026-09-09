@@ -14,6 +14,7 @@ class VoiceNotFoundError(OmniVoiceAPIError):
     def __init__(self, voice_id: str, voice_type: str = "stock") -> None:
         self.voice_id = voice_id
         self.voice_type = voice_type
+        self.valid_voice_ids: list[str] | None = None
         super().__init__(f"Voz no encontrada: {voice_id} ({voice_type})")
 
 
@@ -28,15 +29,19 @@ class UnsupportedLanguageError(OmniVoiceAPIError):
         )
 
 
-class UnsupportedEmotionError(OmniVoiceAPIError):
-    """Se lanza cuando se solicita una emoción no soportada."""
+class UnsupportedInstructError(OmniVoiceAPIError):
+    """Se lanza cuando el instruct contiene tokens no soportados por el modelo."""
 
-    def __init__(self, emotion: str, supported_emotions: list[str]) -> None:
-        self.emotion = emotion
-        self.supported_emotions = supported_emotions
-        super().__init__(
-            f"Emoción no soportada: {emotion}. Emociones soportadas: {', '.join(supported_emotions)}"
-        )
+    def __init__(self, instruct: str, invalid_items: dict[str, str | None], valid_items: list[str]) -> None:
+        self.instruct = instruct
+        self.invalid_items = invalid_items
+        self.valid_items = valid_items
+        lines = [f"Instruct inválido: '{instruct}'"]
+        for item, suggestion in invalid_items.items():
+            hint = f" (¿quisiste decir '{suggestion}'?)" if suggestion else ""
+            lines.append(f"  '{item}' -> '{item}' (no soportado{hint})")
+        lines.append(f"Tokens válidos: {', '.join(valid_items)}")
+        super().__init__("\n".join(lines))
 
 
 class EngineUnavailableError(OmniVoiceAPIError):

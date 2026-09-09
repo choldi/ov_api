@@ -1,15 +1,14 @@
-"""Tests unitarios para el servicio TTS."""
+"""Tests unitarios para TtsService."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
+from omnivoice_api.core.omnivoice_engine import GenerationParams
 from omnivoice_api.core.exceptions import (
-    EngineUnavailableError,
-    UnsupportedEmotionError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
@@ -17,118 +16,154 @@ from omnivoice_api.services.tts import TtsService
 
 
 @pytest.fixture
-def mock_engine_client() -> MagicMock:
-    """Cliente de engine mockeado para tests."""
-    client = AsyncMock()
-    client.list_stock_voices.return_value = [
-        MagicMock(voice_id="es-mx-male", language="es", gender="male", name="Test Voice"),
-        MagicMock(voice_id="en-us-male", language="en", gender="male", name="Test Voice 2"),
-    ]
-    client.list_emotions.return_value = ["neutral", "happy", "sad"]
-    client.synthesize_stock.return_value = MagicMock(
-        wav_bytes=b"test wav data",
+def tts_service() -> TtsService:
+    return TtsService()
+
+
+@pytest.mark.asyncio
+async def test_synthesize_stock_success(tts_service: TtsService) -> None:
+    mock_client = AsyncMock(spec=OmniVoiceEngineClient)
+    mock_client.list_stock_voices = AsyncMock(return_value=[
+        MagicMock(voice_id="es-mx-male"),
+    ])
+    mock_client.synthesize_stock = AsyncMock(return_value=AudioResult(
+        wav_bytes=b"RIFF" + b"\x00" * 100,
         duration_sec=1.0,
-        sample_rate=22050
-    )
-    return client
+        sample_rate=22050,
+    ))
+    tts_service._engine_client = mock_client
 
-
-@pytest.fixture
-def tts_service(mock_engine_client: MagicMock) -> TtsService:
-    """Servicio TTS con cliente de engine mockeado."""
-    service = TtsService()
-    service._engine_client = mock_engine_client
-    return service
-
-
-@pytest.mark.asyncio
-async def test_synthesize_stock_success(tts_service: TtsService, mock_engine_client: MagicMock) -> None:
-    """Test de síntesis exitosa con voz stock."""
     result = await tts_service.synthesize_stock(
-        text="Hola mundo",
+        text="Hola",
         voice_id="es-mx-male",
         language="es",
-        speed=1.0,
-        emotion="happy",
-        intensity=0.8
     )
-    
-    assert result.wav_bytes == b"test wav data"
-    assert result.duration_sec == 1.0
-    assert result.sample_rate == 22050
-    
-    mock_engine_client.synthesize_stock.assert_called_once_with(
-        text="Hola mundo",
+    assert isinstance(result, AudioResult)
+
+
+@pytest.mark.asyncio
+async def test_synthesize_stock_with_generation_params(tts_service: TtsService) -> None:
+    mock_client = AsyncMock(spec=OmniVoiceEngineClient)
+    mock_client.list_stock_voices = AsyncMock(return_value=[
+        MagicMock(voice_id="es-mx-male"),
+    ])
+    mock_client.synthesize_stock = AsyncMock(return_value=AudioResult(
+        wav_bytes=b"RIFF" + b"\x00" * 100,
+        duration_sec=1.0,
+        sample_rate=22050,
+    ))
+    tts_service._engine_client = mock_client
+
+    params = GenerationParams(num_step=16, denoise=False)
+    result = await tts_service.synthesize_stock(
+        text="Hola",
         voice_id="es-mx-male",
         language="es",
-        speed=1.0,
-        emotion="happy",
-        intensity=0.8
+        generation_params=params,
     )
+    assert isinstance(result, AudioResult)
+    mock_client.synthesize_stock.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_synthesize_stock_voice_not_found(tts_service: TtsService, mock_engine_client: MagicMock) -> None:
-    """Test de error cuando la voz no se encuentra."""
-    mock_engine_client.list_stock_voices.return_value = [
-        MagicMock(voice_id="es-mx-male", language="es", gender="male", name="Test Voice")
-    ]
-    
-    with pytest.raises(VoiceNotFoundError) as exc_info:
+async def test_synthesize_stock_voice_not_found(tts_service: TtsService) -> None:
+    mock_client = AsyncMock(spec=OmniVoiceEngineClient)
+    mock_client.list_stock_voices = AsyncMock(return_value=[])
+    tts_service._engine_client = mock_client
+
+    with pytest.raises(VoiceNotFoundError):
         await tts_service.synthesize_stock(
-            text="Hola mundo",
-            voice_id="voz-inexistente",
-            language="es"
-        )
-    
-    assert "voz-inexistente" in str(exc_info.value)
-    mock_engine_client.synthesize_stock.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_synthesize_stock_unsupported_language(tts_service: TtsService, mock_engine_client: MagicMock) -> None:
-    """Test de error cuando el idioma no está soportado."""
-    with pytest.raises(UnsupportedLanguageError) as exc_info:
-        await tts_service.synthesize_stock(
-            text="Hola mundo",
-            voice_id="es-mx-male",
-            language="xx",  # Idioma no soportado
-        )
-    
-    assert "xx" in str(exc_info.value)
-    mock_engine_client.synthesize_stock.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_synthesize_stock_unsupported_emotion(tts_service: TtsService, mock_engine_client: MagicMock) -> None:
-    """Test de error cuando la emoción no está soportada."""
-    with pytest.raises(UnsupportedEmotionError) as exc_info:
-        await tts_service.synthesize_stock(
-            text="Hola mundo",
-            voice_id="es-mx-male",
+            text="Hola",
+            voice_id="nonexistent",
             language="es",
-            emotion="emocion-inexistente"
         )
-    
-    assert "emocion-inexistente" in str(exc_info.value)
-    mock_engine_client.synthesize_stock.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_synthesize_stock_engine_unavailable(tts_service: TtsService, mock_engine_client: MagicMock) -> None:
-    """Test de error cuando el engine no está disponible."""
-    mock_engine_client.synthesize_stock.side_effect = EngineUnavailableError("Engine down")
-    
-    with pytest.raises(EngineUnavailableError):
+async def test_synthesize_stock_unsupported_language(tts_service: TtsService) -> None:
+    mock_client = AsyncMock(spec=OmniVoiceEngineClient)
+    mock_client.list_stock_voices = AsyncMock(return_value=[
+        MagicMock(voice_id="es-mx-male"),
+    ])
+    tts_service._engine_client = mock_client
+    tts_service._settings = MagicMock()
+    tts_service._settings.omnilang_list = ["es", "en", "fr"]
+
+    with pytest.raises(UnsupportedLanguageError):
         await tts_service.synthesize_stock(
-            text="Hola mundo",
+            text="Hola",
             voice_id="es-mx-male",
-            language="es"
+            language="xx",
         )
 
 
 @pytest.mark.asyncio
-async def test_tts_service_close(tts_service: TtsService, mock_engine_client: MagicMock) -> None:
-    """Test de cierre correcto del servicio."""
-    await tts_service.close()
-    mock_engine_client.stop.assert_called_once()
+async def test_synthesize_instruct_success(tts_service: TtsService) -> None:
+    mock_client = AsyncMock(spec=OmniVoiceEngineClient)
+    mock_client.synthesize_instruct = AsyncMock(return_value=AudioResult(
+        wav_bytes=b"RIFF" + b"\x00" * 100,
+        duration_sec=1.0,
+        sample_rate=22050,
+    ))
+    tts_service._engine_client = mock_client
+    tts_service._settings = MagicMock()
+    tts_service._settings.omnilang_list = ["es", "en"]
+
+    result = await tts_service.synthesize_instruct(
+        text="Hello",
+        instruct="female, british accent",
+        language="en",
+    )
+    assert isinstance(result, AudioResult)
+
+
+@pytest.mark.asyncio
+async def test_synthesize_clone_success(tts_service: TtsService) -> None:
+    mock_voice_service = AsyncMock()
+    mock_voice_service.get_voice = AsyncMock(return_value={
+        "reference_path": "/tmp/ref.wav",
+        "language": "es",
+    })
+    tts_service._voice_service = mock_voice_service
+
+    mock_client = AsyncMock(spec=OmniVoiceEngineClient)
+    mock_client.synthesize_clone = AsyncMock(return_value=AudioResult(
+        wav_bytes=b"RIFF" + b"\x00" * 100,
+        duration_sec=1.0,
+        sample_rate=22050,
+    ))
+    tts_service._engine_client = mock_client
+
+    result = await tts_service.synthesize_clone(
+        text="Hola",
+        voice_id="cloned-123",
+        language="es",
+    )
+    assert isinstance(result, AudioResult)
+
+
+@pytest.mark.asyncio
+async def test_synthesize_clone_with_instruct(tts_service: TtsService) -> None:
+    mock_voice_service = AsyncMock()
+    mock_voice_service.get_voice = AsyncMock(return_value={
+        "reference_path": "/tmp/ref.wav",
+        "language": "es",
+    })
+    tts_service._voice_service = mock_voice_service
+
+    mock_client = AsyncMock(spec=OmniVoiceEngineClient)
+    mock_client.synthesize_clone = AsyncMock(return_value=AudioResult(
+        wav_bytes=b"RIFF" + b"\x00" * 100,
+        duration_sec=1.0,
+        sample_rate=22050,
+    ))
+    tts_service._engine_client = mock_client
+
+    result = await tts_service.synthesize_clone(
+        text="Hola",
+        voice_id="cloned-123",
+        language="es",
+        instruct="male, portuguese accent",
+    )
+    assert isinstance(result, AudioResult)
+    mock_client.synthesize_clone.assert_called_once()

@@ -22,7 +22,6 @@ async def test_synthesize_stock_fallback_to_stock_voice() -> None:
     mock_engine.list_stock_voices.return_value = [
         MagicMock(voice_id="es-mx-male", language="es"),
     ]
-    mock_engine.list_emotions.return_value = ["neutral"]
     mock_engine.synthesize_stock.return_value = AudioResult(
         wav_bytes=b"wav", duration_sec=1.0, sample_rate=22050,
     )
@@ -47,7 +46,6 @@ async def test_synthesize_stock_fallback_on_other_exception() -> None:
     mock_engine.list_stock_voices.return_value = [
         MagicMock(voice_id="es-mx-male", language="es"),
     ]
-    mock_engine.list_emotions.return_value = ["neutral"]
     mock_engine.synthesize_stock.return_value = AudioResult(
         wav_bytes=b"wav", duration_sec=1.0, sample_rate=22050,
     )
@@ -135,9 +133,9 @@ async def test_synthesize_clone_success() -> None:
     mock_engine.synthesize_clone.assert_called_once_with(
         text="Hola",
         reference_audio_path="/path/to/ref.wav",
-        language="es",
-        emotion=None,
-        intensity=None,
+        instruct=None,
+        speed=1.0,
+        generation_params=None,
     )
 
 

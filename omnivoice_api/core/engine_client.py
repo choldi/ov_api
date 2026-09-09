@@ -11,11 +11,16 @@ from typing import Optional
 
 import structlog
 
-from omnivoice_api.core.omnivoice_engine import OmniVoiceEngine, get_engine, close_engine
+from omnivoice_api.core.omnivoice_engine import (
+    OmniVoiceEngine,
+    GenerationParams,
+    get_engine,
+    close_engine,
+)
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
-    UnsupportedEmotionError,
     UnsupportedLanguageError,
+    UnsupportedInstructError,
     VoiceNotFoundError,
 )
 
@@ -49,10 +54,7 @@ class EngineHealth:
 
 
 def _parse_wav_header(wav_bytes: bytes) -> tuple[int, float]:
-    """Parsea la cabecera de un WAV y devuelve (sample_rate, duration_sec).
-
-    Si la cabecera no es válida, devuelve valores por defecto.
-    """
+    """Parsea la cabecera de un WAV y devuelve (sample_rate, duration_sec)."""
     sample_rate = 22050
     duration_sec = 0.0
     if len(wav_bytes) >= 44:
@@ -69,13 +71,7 @@ def _parse_wav_header(wav_bytes: bytes) -> tuple[int, float]:
 
 
 def _validate_wav_audio(wav_bytes: bytes) -> dict:
-    """
-    Valida un WAV y devuelve información detallada para debugging.
-
-    Returns:
-        Dict con: valid, sample_rate, duration_sec, num_channels, bits_per_sample,
-                  rms_amplitude, peak_amplitude, is_silent
-    """
+    """Valida un WAV y devuelve información detallada para debugging."""
     result = {
         "valid": False,
         "sample_rate": 0,
@@ -113,11 +109,9 @@ def _validate_wav_audio(wav_bytes: bytes) -> dict:
             result["error"] = f"fmt chunk too small: {fmt_size}"
             return result
 
-        audio_format = int.from_bytes(wav_bytes[fmt_pos+8:fmt_pos+10], byteorder='little')
         num_channels = int.from_bytes(wav_bytes[fmt_pos+10:fmt_pos+12], byteorder='little')
         sample_rate = int.from_bytes(wav_bytes[fmt_pos+12:fmt_pos+16], byteorder='little')
         byte_rate = int.from_bytes(wav_bytes[fmt_pos+16:fmt_pos+20], byteorder='little')
-        block_align = int.from_bytes(wav_bytes[fmt_pos+20:fmt_pos+22], byteorder='little')
         bits_per_sample = int.from_bytes(wav_bytes[fmt_pos+22:fmt_pos+24], byteorder='little')
 
         data_pos = wav_bytes.find(b'data', fmt_pos + 8 + fmt_size)
@@ -174,25 +168,12 @@ class OmniVoiceEngineClient:
             logger.info("engine_client_starting")
             self._engine = await get_engine()
             self._started = True
-            # Log explícito del modo activo para confirmar que NO es mock
             mode = "MOCK" if self._engine._use_mock else "REAL"
             logger.info(
                 "engine_client_started",
                 mode=mode,
                 device=self._engine._device,
-                python_bin=str(self._engine._settings.python_bin),
-                model_path=str(self._engine._settings.model_path),
             )
-            if mode == "REAL":
-                logger.info(
-                    ">>> CONFIRMADO: El cliente está conectado al motor OmniVoice REAL "
-                    "(no se usará generación mock de tonos)."
-                )
-            else:
-                logger.warning(
-                    ">>> ATENCIÓN: El cliente está en modo MOCK. "
-                    "Las síntesis generarán tonos de prueba, NO audio real."
-                )
 
     async def stop(self) -> None:
         """Detiene el cliente y libera recursos."""
@@ -208,34 +189,21 @@ class OmniVoiceEngineClient:
         if not self._started:
             await self.start()
         assert self._engine is not None
-        log = logger.bind()
-        log.info("engine_health_check_start")
         health_dict = await self._engine.health_check()
-        result = EngineHealth(
+        return EngineHealth(
             reachable=health_dict.get("model_loaded", False),
             model_loaded=health_dict.get("model_loaded", False),
             gpu_available=health_dict.get("gpu_available", False),
             vram_free_mb=health_dict.get("vram_free_mb", 0),
         )
-        log.info(
-            "engine_health_check_completed",
-            reachable=result.reachable,
-            model_loaded=result.model_loaded,
-            gpu_available=result.gpu_available,
-            vram_free_mb=result.vram_free_mb,
-            mode=health_dict.get("mode", "UNKNOWN"),
-        )
-        return result
 
     async def list_stock_voices(self, language: str | None = None) -> list[StockVoice]:
         """Lista voces stock disponibles."""
         if not self._started:
             await self.start()
         assert self._engine is not None
-        log = logger.bind(language=language)
-        log.info("engine_list_stock_voices_start")
         voices_dicts = await self._engine.list_stock_voices(language=language)
-        voices = [
+        return [
             StockVoice(
                 voice_id=v["voice_id"],
                 language=v["language"],
@@ -244,29 +212,14 @@ class OmniVoiceEngineClient:
             )
             for v in voices_dicts
         ]
-        log.info("engine_list_stock_voices_completed", count=len(voices))
-        return voices
-
-    async def list_emotions(self) -> list[str]:
-        """Lista emociones soportadas."""
-        if not self._started:
-            await self.start()
-        assert self._engine is not None
-        log = logger.bind()
-        log.info("engine_list_emotions_start")
-        emotions = await self._engine.list_emotions()
-        log.info("engine_list_emotions_completed", count=len(emotions), emotions=emotions)
-        return emotions
 
     async def synthesize_stock(
         self,
         *,
         text: str,
         voice_id: str,
-        language: str,
         speed: float = 1.0,
-        emotion: str | None = None,
-        intensity: float | None = None,
+        generation_params: GenerationParams | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz stock."""
         if not self._started:
@@ -274,78 +227,81 @@ class OmniVoiceEngineClient:
         assert self._engine is not None
 
         call_id = str(uuid.uuid4())
-        log = logger.bind(
-            call_id=call_id,
-            operation="synthesize_stock",
-            voice_id=voice_id,
-            language=language,
-            text_length=len(text),
-            speed=speed,
-            emotion=emotion,
-            intensity=intensity,
-            engine_mode="MOCK" if self._engine._use_mock else "REAL",
-        )
-
-        log.info(
-            "engine_synthesize_stock_request",
-            text_preview=text[:100],
-            note="Delegando al motor OmniVoice REAL" if not self._engine._use_mock
-                 else "ATENCIÓN: usando motor MOCK",
-        )
+        log = logger.bind(call_id=call_id, operation="synthesize_stock", voice_id=voice_id)
         start_time = time.perf_counter()
 
         try:
             wav_bytes = await self._engine.synthesize_stock(
                 text=text,
                 voice_id=voice_id,
-                language=language,
                 speed=speed,
-                emotion=emotion,
-                intensity=intensity,
+                generation_params=generation_params,
             )
         except Exception as e:
             elapsed = time.perf_counter() - start_time
-            log.error(
-                "engine_generation_failed",
-                elapsed_sec=elapsed,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
+            log.error("engine_generation_failed", elapsed_sec=elapsed, error=str(e))
             raise
 
         elapsed = time.perf_counter() - start_time
-
         validation = _validate_wav_audio(wav_bytes)
-        sample_rate = validation["sample_rate"]
-        duration_sec = validation["duration_sec"]
 
         log.info(
             "engine_generation_completed",
             elapsed_sec=elapsed,
-            duration_sec=duration_sec,
-            sample_rate=sample_rate,
+            duration_sec=validation["duration_sec"],
+            sample_rate=validation["sample_rate"],
             audio_bytes=len(wav_bytes),
-            validation=validation,
         )
-
-        if validation["is_silent"]:
-            log.warning(
-                "GENERATED AUDIO APPEARS SILENT",
-                rms=validation["rms_amplitude"],
-                peak=validation["peak_amplitude"],
-                is_silent=validation["is_silent"],
-            )
-        else:
-            log.info(
-                "Audio validation OK",
-                rms=validation["rms_amplitude"],
-                peak=validation["peak_amplitude"],
-            )
 
         return AudioResult(
             wav_bytes=wav_bytes,
-            duration_sec=duration_sec,
-            sample_rate=sample_rate,
+            duration_sec=validation["duration_sec"],
+            sample_rate=validation["sample_rate"],
+        )
+
+    async def synthesize_instruct(
+        self,
+        *,
+        text: str,
+        instruct: str,
+        speed: float = 1.0,
+        generation_params: GenerationParams | None = None,
+    ) -> AudioResult:
+        """Sintetiza texto con instruct personalizado (voice design libre)."""
+        if not self._started:
+            await self.start()
+        assert self._engine is not None
+
+        call_id = str(uuid.uuid4())
+        log = logger.bind(call_id=call_id, operation="synthesize_instruct", instruct=instruct)
+        start_time = time.perf_counter()
+
+        try:
+            wav_bytes = await self._engine.synthesize_instruct(
+                text=text,
+                instruct=instruct,
+                speed=speed,
+                generation_params=generation_params,
+            )
+        except Exception as e:
+            elapsed = time.perf_counter() - start_time
+            log.error("engine_generation_failed", elapsed_sec=elapsed, error=str(e))
+            raise
+
+        elapsed = time.perf_counter() - start_time
+        validation = _validate_wav_audio(wav_bytes)
+
+        log.info(
+            "engine_generation_completed",
+            elapsed_sec=elapsed,
+            duration_sec=validation["duration_sec"],
+            audio_bytes=len(wav_bytes),
+        )
+
+        return AudioResult(
+            wav_bytes=wav_bytes,
+            duration_sec=validation["duration_sec"],
+            sample_rate=validation["sample_rate"],
         )
 
     async def synthesize_clone(
@@ -353,84 +309,44 @@ class OmniVoiceEngineClient:
         *,
         text: str,
         reference_audio_path: str,
-        language: str,
-        emotion: str | None = None,
-        intensity: float | None = None,
+        instruct: str | None = None,
+        speed: float = 1.0,
+        generation_params: GenerationParams | None = None,
     ) -> AudioResult:
-        """Sintetiza texto con voz clonada."""
+        """Sintetiza texto con voz clonada, opcionalmente con instruct."""
         if not self._started:
             await self.start()
         assert self._engine is not None
 
         call_id = str(uuid.uuid4())
-        log = logger.bind(
-            call_id=call_id,
-            operation="synthesize_clone",
-            reference_audio_path=reference_audio_path,
-            language=language,
-            text_length=len(text),
-            emotion=emotion,
-            intensity=intensity,
-            engine_mode="MOCK" if self._engine._use_mock else "REAL",
-        )
-
-        log.info(
-            "engine_synthesize_clone_request",
-            text_preview=text[:100],
-            note="Delegando al motor OmniVoice REAL" if not self._engine._use_mock
-                 else "ATENCIÓN: usando motor MOCK",
-        )
+        log = logger.bind(call_id=call_id, operation="synthesize_clone")
         start_time = time.perf_counter()
 
         try:
             wav_bytes = await self._engine.synthesize_clone(
                 text=text,
                 reference_audio_path=reference_audio_path,
-                language=language,
-                emotion=emotion,
-                intensity=intensity,
+                instruct=instruct,
+                speed=speed,
+                generation_params=generation_params,
             )
         except Exception as e:
             elapsed = time.perf_counter() - start_time
-            log.error(
-                "engine_generation_failed",
-                elapsed_sec=elapsed,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
+            log.error("engine_generation_failed", elapsed_sec=elapsed, error=str(e))
             raise
 
         elapsed = time.perf_counter() - start_time
-
         validation = _validate_wav_audio(wav_bytes)
-        sample_rate = validation["sample_rate"]
-        duration_sec = validation["duration_sec"]
 
         log.info(
             "engine_generation_completed",
             elapsed_sec=elapsed,
-            duration_sec=duration_sec,
-            sample_rate=sample_rate,
+            duration_sec=validation["duration_sec"],
             audio_bytes=len(wav_bytes),
-            validation=validation,
         )
-
-        if validation["is_silent"]:
-            log.warning(
-                "GENERATED AUDIO APPEARS SILENT",
-                rms=validation["rms_amplitude"],
-                peak=validation["peak_amplitude"],
-                is_silent=validation["is_silent"],
-            )
-        else:
-            log.info(
-                "Audio validation OK",
-                rms=validation["rms_amplitude"],
-                peak=validation["peak_amplitude"],
-            )
 
         return AudioResult(
             wav_bytes=wav_bytes,
-            duration_sec=duration_sec,
-            sample_rate=sample_rate,
+            duration_sec=validation["duration_sec"],
+            sample_rate=validation["sample_rate"],
         )
