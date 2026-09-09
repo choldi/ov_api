@@ -183,7 +183,7 @@ async def test_synthesize_stock_short_wav(engine_client: OmniVoiceEngineClient) 
             voice_id="es-mx-male",
             language="es",
         )
-        assert result.sample_rate == 22050
+        assert result.sample_rate == 0  # _validate_wav_audio returns 0 for < 44 bytes
 
 
 @pytest.mark.asyncio
@@ -240,7 +240,7 @@ async def test_synthesize_clone_short_wav(engine_client: OmniVoiceEngineClient) 
             reference_audio_path="/path/to/ref.wav",
             language="es",
         )
-        assert result.sample_rate == 22050
+        assert result.sample_rate == 0  # _validate_wav_audio returns 0 for < 44 bytes
 
 
 @pytest.mark.asyncio

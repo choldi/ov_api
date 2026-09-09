@@ -73,10 +73,10 @@ install:
 	$(PYTHON) -m venv $(VENV)
 	@echo "Actualizando pip..."
 	$(PYTHON) -m pip install --upgrade pip
-	@echo "Instalando dependencias del proyecto..."
-	$(PIP) install -e ".[dev]"
+	@echo "Instalando dependencias del proyecto con uv (torch 2.5.1+cu124)..."
+	uv sync --dev --project .
 	@echo "Instalando OmniVoice desde git..."
-	$(PIP) install git+https://github.com/k2-fsa/OmniVoice.git
+	uv pip install git+https://github.com/k2-fsa/OmniVoice.git --python $(PYTHON_VENV)
 	@echo "Entorno virtual creado y dependencias instaladas en $(VENV)"
 
 # Tests

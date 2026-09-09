@@ -178,6 +178,7 @@ class OmniVoiceEngine:
         self._initialized = True
 
         self._settings = get_settings()
+        self._device = self._settings.OMNIVOICE_DEVICE
         self._model = None
         self._stock_voices: list[dict] = []
         self._emotions: list[str] = ["neutral", "happy", "sad", "angry", "surprised"]

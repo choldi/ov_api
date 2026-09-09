@@ -30,9 +30,10 @@ classifiers = [
 #
 # torch/torchaudio se pinean a 2.5.1+cu124 para compatibilidad con GPUs
 # Pascal (P2000, GTX 10xx, CC 6.x) que NO soportan CUDA 12.4+.
-# Si necesitas otra versión, override con:
-#   pip install torch==X.Y.Z+cuXXX torchaudio==X.Y.Z+cuXXX \
-#       --index-url https://download.pytorch.org/whl/cuXXX
+# El instalador (uv) resuelve automáticamente la wheel CUDA desde el
+# [[tool.uv.index]] configurado abajo. Para pip manual, usa:
+#   pip install torch==2.5.1+cu124 torchaudio==2.5.1+cu124 \
+#       --index-url https://download.pytorch.org/whl/cu124
 dependencies = [
     # Core API
     "fastapi>=0.115.0",
@@ -57,10 +58,10 @@ dependencies = [
     "slowapi>=0.1.9",
     "httpx>=0.27.0",
     # GPU / Health check (necesario para torch.cuda.is_available() en health_check)
-    # Compatible con NVIDIA P2000 (Pascal, CC 6.1) - requiere CUDA 11.8+ o 12.1+
+    # Compatible con NVIDIA P2000 (Pascal, CC 6.1) - requiere CUDA 12.1+
     # torch y torchaudio DEBEN estar en la misma versión CUDA para evitar
     # el error "undefined symbol _ZN3c106detail23torchLibraryImpl...".
-    # Si tu plataforma no es CUDA 12.1, override con --index-url.
+    # La wheel correcta (cu124) se resuelve desde el index [[tool.uv.index]].
     "torch==2.5.1",
     "torchaudio==2.5.1",
 ]
@@ -81,6 +82,20 @@ load = [
     "locust>=2.32.0",
 ]
 
+# PEP 735 dependency groups (used by uv sync --dev)
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+    "ipython>=8.24.0",
+    "ipdb>=0.13.13",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["omnivoice_api*"]
@@ -92,7 +107,11 @@ include = ["omnivoice_api*"]
 [[tool.uv.index]]
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
-explicit = false
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchaudio = { index = "pytorch-cu124" }
 
 [tool.ruff]
 line-length = 100

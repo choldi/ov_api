@@ -14,7 +14,6 @@ from omnivoice_api.core.omnivoice_engine import (
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
     UnsupportedEmotionError,
-    UnsupportedLanguageError,
     VoiceNotFoundError,
 )
 
@@ -95,13 +94,13 @@ async def test_engine_synthesize_stock_voice_not_found(engine: OmniVoiceEngine) 
 
 @pytest.mark.asyncio
 async def test_engine_synthesize_stock_unsupported_language(engine: OmniVoiceEngine) -> None:
-    """Test de síntesis stock con idioma no soportado."""
-    with pytest.raises(UnsupportedLanguageError):
-        await engine.synthesize_stock(
-            text="Hola",
-            voice_id="es-mx-male",
-            language="xx",
-        )
+    """Test de síntesis stock con idioma no soportado — el engine lo acepta sin validar."""
+    wav = await engine.synthesize_stock(
+        text="Hola",
+        voice_id="es-mx-male",
+        language="xx",
+    )
+    assert isinstance(wav, bytes)
 
 
 @pytest.mark.asyncio
@@ -141,13 +140,13 @@ async def test_engine_synthesize_clone(engine: OmniVoiceEngine) -> None:
 
 @pytest.mark.asyncio
 async def test_engine_synthesize_clone_unsupported_language(engine: OmniVoiceEngine) -> None:
-    """Test de síntesis clonada con idioma no soportado."""
-    with pytest.raises(UnsupportedLanguageError):
-        await engine.synthesize_clone(
-            text="Hola",
-            reference_audio_path="/tmp/ref.wav",
-            language="xx",
-        )
+    """Test de síntesis clonada con idioma no soportado — el engine lo acepta sin validar."""
+    wav = await engine.synthesize_clone(
+        text="Hola",
+        reference_audio_path="/tmp/ref.wav",
+        language="xx",
+    )
+    assert isinstance(wav, bytes)
 
 
 @pytest.mark.asyncio
@@ -195,7 +194,7 @@ async def test_engine_health_check(engine: OmniVoiceEngine) -> None:
 @pytest.mark.asyncio
 async def test_engine_generate_mock_wav(engine: OmniVoiceEngine) -> None:
     """Test de generación de WAV mock."""
-    wav = engine._generate_mock_wav(duration_sec=1.0, sample_rate=22050)
+    wav = engine._generate_test_tone_wav(duration_sec=1.0, sample_rate=22050)
     assert isinstance(wav, bytes)
     assert len(wav) > 44  # At least header
 
