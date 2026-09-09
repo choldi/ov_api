@@ -1,7 +1,7 @@
 # Makefile para OmniVoice API - Compatible con Windows y Unix
 # Uso: make <target>
 
-.PHONY: help install test lint format run dev clean check-gpu check-omnivoice-install download-model pre-commit test-unit test-integration test-load
+.PHONY: help install test lint format run dev clean check-gpu check-omnivoice-install download-model pre-commit test-unit test-integration test-load check-uv
 
 # Detectar sistema operativo
 ifeq ($(OS),Windows_NT)
@@ -68,7 +68,7 @@ help:
 	@echo ""
 
 # Instalación - siempre ejecuta los comandos (phony)
-install:
+install: check-uv
 	@echo "Creando entorno virtual en $(VENV)..."
 	$(PYTHON) -m venv $(VENV)
 	@echo "Actualizando pip..."
@@ -78,6 +78,36 @@ install:
 	@echo "Instalando OmniVoice desde git..."
 	uv pip install git+https://github.com/k2-fsa/OmniVoice.git --python $(PYTHON_VENV)
 	@echo "Entorno virtual creado y dependencias instaladas en $(VENV)"
+
+# Verifica que uv está disponible. Si no, intenta instalarlo.
+ifeq ($(OS),Windows_NT)
+check-uv:
+	@where uv >$(NULL) 2>&1 || ( \
+		echo [INFO] uv no encontrado. Intentando instalar con pip... && \
+		$(PYTHON) -m pip install uv && \
+		where uv >$(NULL) 2>&1 \
+	) || ( \
+		echo. && \
+		echo ERROR: No se pudo instalar uv automaticamente. && \
+		echo Instala uv manualmente: && \
+		echo   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex" && \
+		exit 1 \
+	)
+else
+check-uv:
+	@command -v uv >/dev/null 2>&1 || ( \
+		echo "[INFO] uv no encontrado. Intentando instalar con pip..." && \
+		$(PYTHON) -m pip install --user uv && \
+		export PATH="$$HOME/.local/bin:$$PATH" && \
+		command -v uv >/dev/null 2>&1 \
+	) || ( \
+		echo "" && \
+		echo "ERROR: No se pudo instalar uv automaticamente." && \
+		echo "Instala uv manualmente:" && \
+		echo "  curl -LsSf https://astral.sh/uv/install.sh | sh" && \
+		exit 1 \
+	)
+endif
 
 # Tests
 test: install
