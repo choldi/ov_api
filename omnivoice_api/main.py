@@ -52,7 +52,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from omnivoice_api.settings import get_settings
 from omnivoice_api.core.omnivoice_engine import get_engine, close_engine
-from omnivoice_api.api.v1 import voices, tts
+from omnivoice_api.api.v1 import voices, tts, conversations
 
 
 @asynccontextmanager
@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
     try:
         current_loop = asyncio.get_running_loop()
         loop_class = type(current_loop).__name__
-        is_proactor = isinstance(current_loop, asyncio.ProactorEventLoop)
+        is_proactor = sys.platform == "win32" and isinstance(current_loop, asyncio.ProactorEventLoop)
         logger.info(
             "Lifespan startup: loop class=%s, is_proactor=%s, platform=%s",
             loop_class, is_proactor, sys.platform,
@@ -124,6 +124,7 @@ app.add_middleware(
 
 app.include_router(voices.router, prefix="/api/v1")
 app.include_router(tts.router, prefix="/api/v1")
+app.include_router(conversations.router, prefix="/api/v1")
 
 
 @app.get("/api/v1/health", tags=["Health"])
