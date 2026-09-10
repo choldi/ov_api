@@ -5,10 +5,6 @@ import logging
 import sys
 
 # --- Configuración del Event Loop Policy ---
-# DEBE ejecutarse ANTES de que uvicorn cree el event loop.
-# En Windows, el SelectorEventLoop (default de uvicorn) NO soporta subprocesses
-# (asyncio.create_subprocess_exec -> NotImplementedError). Forzamos
-# ProactorEventLoop para compatibilidad con internos de OmniVoice/torch.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     _EVENT_LOOP_POLICY_NAME = "WindowsProactorEventLoopPolicy"
@@ -31,14 +27,7 @@ logger.info(
 
 
 def _force_proactor_loop_factory() -> asyncio.AbstractEventLoop:
-    """
-    Factory que devuelve un nuevo event loop compatible con subprocess en Windows.
-
-    Para usar con uvicorn:
-        uvicorn omnivoice_api.main:app --loop-factory=omnivoice_api.main:_force_proactor_loop_factory
-    """
     if sys.platform == "win32":
-        logger.info("Creando ProactorEventLoop para Windows")
         loop = asyncio.ProactorEventLoop()
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         return loop
@@ -52,6 +41,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from omnivoice_api.settings import get_settings
 from omnivoice_api.core.omnivoice_engine import get_engine, close_engine
+from omnivoice_api.core.cleanup import start_cleanup_task, stop_cleanup_task
+from omnivoice_api.middleware import RequestIDMiddleware
 from omnivoice_api.api.v1 import voices, tts, conversations
 
 
@@ -67,8 +58,7 @@ async def lifespan(app: FastAPI):
         )
         if sys.platform == "win32" and not is_proactor:
             logger.warning(
-                "ATENCIÓN: en Windows se requiere ProactorEventLoop para asyncio.subprocess. "
-                "Ejecuta con: uvicorn ... --loop-factory=omnivoice_api.main:_force_proactor_loop_factory"
+                "ATENCIÓN: en Windows se requiere ProactorEventLoop para asyncio.subprocess."
             )
     except RuntimeError:
         pass
@@ -78,8 +68,7 @@ async def lifespan(app: FastAPI):
         engine = await get_engine()
         if engine._use_mock and engine._real_engine_error:
             logger.warning(
-                "Engine en modo DEGRADADO (mock por fallback). "
-                "Causa raíz: %s",
+                "Engine en modo DEGRADADO (mock por fallback). Causa raíz: %s",
                 engine._real_engine_error,
             )
         else:
@@ -87,9 +76,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         settings = get_settings()
         if settings.OMNIVOICE_FALLBACK_TO_MOCK:
-            # No tumbamos la app: el engine ya habrá conmutado a mock o,
-            # si el fallo se produjo fuera de initialize(), la API arranca
-            # igualmente y /health reportará el estado degradado.
             logger.exception(
                 "Fallo inicializando engine, pero OMNIVOICE_FALLBACK_TO_MOCK=true: "
                 "la API arrancará en modo degradado. Error: %s",
@@ -98,7 +84,15 @@ async def lifespan(app: FastAPI):
         else:
             logger.exception("Fallo inicializando engine: %s", e)
             raise
+
+    # Iniciar cleanup task
+    settings = get_settings()
+    start_cleanup_task(settings.OUTPUTS_DIR, ttl_seconds=settings.OUTPUT_TTL_SECONDS)
+
     yield
+
+    # Shutdown
+    stop_cleanup_task()
     logger.info("Application shutdown: cerrando engine OmniVoice...")
     await close_engine()
 
@@ -113,7 +107,9 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+# --- Middleware ---
 settings = get_settings()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -121,7 +117,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIDMiddleware)
 
+# --- Rate limiting (slowapi) ---
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# --- Prometheus metrics ---
+from prometheus_fastapi_instrumentator import Instrumentator
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+
+# --- Routers ---
 app.include_router(voices.router, prefix="/api/v1")
 app.include_router(tts.router, prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
@@ -186,7 +198,6 @@ if __name__ == "__main__":
     import uvicorn
 
     if sys.platform == "win32":
-        # En Windows, uvicorn debe usar el loop factory para ProactorEventLoop
         uvicorn.run(
             "omnivoice_api.main:app",
             host="0.0.0.0",

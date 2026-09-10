@@ -20,6 +20,7 @@ from omnivoice_api.core.exceptions import (
 )
 from omnivoice_api.services.tts import TtsService
 from omnivoice_api.services.voice_service import VoiceService
+from omnivoice_api.core.engine_pool import get_engine_pool
 
 router = APIRouter(prefix="/tts", tags=["tts"])
 
@@ -142,23 +143,27 @@ async def synthesize_tts(
             audio_chunk_duration, audio_chunk_threshold,
         )
 
-        # Si se proporciona instruct, usar voice design libre
-        if instruct:
-            result = await tts_service.synthesize_instruct(
-                text=text,
-                instruct=instruct,
-                language=language,
-                speed=speed,
-                generation_params=gen_params,
-            )
-        else:
-            result = await tts_service.synthesize_stock(
-                text=text,
-                voice_id=voice_id,
-                language=language,
-                speed=speed,
-                generation_params=gen_params,
-            )
+        pool = get_engine_pool()
+        await pool.acquire()
+        try:
+            if instruct:
+                result = await tts_service.synthesize_instruct(
+                    text=text,
+                    instruct=instruct,
+                    language=language,
+                    speed=speed,
+                    generation_params=gen_params,
+                )
+            else:
+                result = await tts_service.synthesize_stock(
+                    text=text,
+                    voice_id=voice_id,
+                    language=language,
+                    speed=speed,
+                    generation_params=gen_params,
+                )
+        finally:
+            pool.release()
     except (VoiceNotFoundError, UnsupportedLanguageError, UnsupportedInstructError, EngineUnavailableError) as e:
         _handle_tts_error(e)
     except Exception as e:
@@ -202,13 +207,18 @@ async def synthesize_instruct(
             preprocess_prompt, postprocess_output, pad_duration, fade_duration,
             audio_chunk_duration, audio_chunk_threshold,
         )
-        result = await tts_service.synthesize_instruct(
-            text=text,
-            instruct=instruct,
-            language=language,
-            speed=speed,
-            generation_params=gen_params,
-        )
+        pool = get_engine_pool()
+        await pool.acquire()
+        try:
+            result = await tts_service.synthesize_instruct(
+                text=text,
+                instruct=instruct,
+                language=language,
+                speed=speed,
+                generation_params=gen_params,
+            )
+        finally:
+            pool.release()
     except (UnsupportedLanguageError, UnsupportedInstructError, EngineUnavailableError) as e:
         _handle_tts_error(e)
     except Exception as e:
