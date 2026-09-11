@@ -9,6 +9,7 @@ import soundfile as sf
 from loguru import logger
 
 from omnivoice_api.core.audio import AudioValidator
+from omnivoice_api.core.embedding_cache import EmbeddingCache, get_embedding_cache
 from omnivoice_api.core.exceptions import (
     InvalidReferenceAudioError,
     UnsupportedLanguageError,
@@ -24,16 +25,19 @@ class VoiceService:
         self,
         repository: VoiceRepository | None = None,
         audio_validator: AudioValidator | None = None,
+        embedding_cache: EmbeddingCache | None = None,
     ):
         """Initialize the voice service.
-        
+
         Args:
             repository: Voice repository instance (creates default if None)
             audio_validator: Audio validator instance (creates default if None)
+            embedding_cache: LRU cache for audio embeddings (creates default if None)
         """
         self._settings = get_settings()
         self._repository = repository or VoiceRepository()
         self._audio_validator = audio_validator or AudioValidator()
+        self._embedding_cache = embedding_cache or get_embedding_cache()
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -181,25 +185,36 @@ class VoiceService:
         return await self._repository.update(voice_id, name, metadata)
 
     async def delete_voice(self, voice_id: str) -> bool:
-        """Delete a cloned voice by its ID.
-        
+        """Delete a cloned voice by its ID and invalidate its cached embedding.
+
         Args:
             voice_id: The UUID of the voice to delete
-            
+
         Returns:
             bool: True if the voice was deleted, False if not found
         """
         await self.initialize()
+        # Invalidate cached embedding before deleting the voice record
+        try:
+            voice = await self._repository.get_by_id(voice_id)
+            self._embedding_cache.invalidate(voice["reference_path"])
+        except Exception:
+            pass  # Voice may not exist or have no cached embedding
         return await self._repository.delete(voice_id)
 
     async def voice_exists(self, voice_id: str) -> bool:
         """Check if a cloned voice exists by ID.
-        
+
         Args:
             voice_id: The UUID to check
-            
+
         Returns:
             bool: True if the voice exists
         """
         await self.initialize()
         return await self._repository.voice_exists(voice_id)
+
+    @property
+    def embedding_cache(self) -> EmbeddingCache:
+        """Access the embedding cache for external use (e.g. cache stats)."""
+        return self._embedding_cache

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
-from fastapi.responses import Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi.responses import Response, StreamingResponse
 
 from omnivoice_api.core.engine_client import OmniVoiceEngineClient
 from omnivoice_api.core.exceptions import (
@@ -15,6 +15,14 @@ from omnivoice_api.core.exceptions import (
 from omnivoice_api.services.conversation import ConversationService, ConversationTurn
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+WAV_CHUNK_SIZE = 64 * 1024  # 64 KB chunks for streaming
+
+
+def _stream_wav(wav_bytes: bytes, chunk_size: int = WAV_CHUNK_SIZE):
+    """Generator that yields WAV data in chunks."""
+    for i in range(0, len(wav_bytes), chunk_size):
+        yield wav_bytes[i : i + chunk_size]
 
 
 async def get_conversation_service() -> ConversationService:
@@ -32,7 +40,11 @@ async def get_conversation_service() -> ConversationService:
     responses={200: {"content": {"audio/wav": {}}}},
     response_class=Response,
     summary="Generar conversación multi-voz",
-    description="Genera audio concatenando múltiples turnos de diferentes voces con silencios entre ellos.",
+    description=(
+        "Genera audio de una conversación entre dos o más voces. "
+        "Cada turno especifica una voz y texto. Los turnos se concatenan con silencios configurables. "
+        "Útil para crear diálogos, entrevistas, o contenido multi-personaje."
+    ),
 )
 async def generate_conversation(
     turns: Annotated[
@@ -51,6 +63,7 @@ async def generate_conversation(
         int,
         Body(ge=0, le=5000, description="Milisilundos de silencio entre turnos (0-5000)"),
     ] = 300,
+    stream: Annotated[bool, Query(description="Streaming por chunks")] = False,
     tts_service: ConversationService = Depends(get_conversation_service),
 ) -> Response:
     """Genera audio de una conversación multi-voz."""
@@ -120,4 +133,10 @@ async def generate_conversation(
             },
         ) from e
 
+    if stream:
+        return StreamingResponse(
+            _stream_wav(result.wav_bytes),
+            media_type="audio/wav",
+            headers={"Content-Length": str(len(result.wav_bytes))},
+        )
     return Response(content=result.wav_bytes, media_type="audio/wav")

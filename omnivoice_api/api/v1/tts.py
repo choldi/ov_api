@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
 from omnivoice_api.core.omnivoice_engine import (
@@ -23,6 +23,14 @@ from omnivoice_api.services.voice_service import VoiceService
 from omnivoice_api.core.engine_pool import get_engine_pool
 
 router = APIRouter(prefix="/tts", tags=["tts"])
+
+WAV_CHUNK_SIZE = 64 * 1024  # 64 KB chunks for streaming
+
+
+def _stream_wav(wav_bytes: bytes, chunk_size: int = WAV_CHUNK_SIZE):
+    """Generator that yields WAV data in chunks."""
+    for i in range(0, len(wav_bytes), chunk_size):
+        yield wav_bytes[i : i + chunk_size]
 
 
 async def get_tts_service() -> TtsService:
@@ -114,6 +122,11 @@ def _handle_tts_error(e: Exception) -> None:
     responses={200: {"content": {"audio/wav": {}}}},
     response_class=Response,
     summary="Sintetizar texto a voz con voz stock",
+    description=(
+        "Genera audio WAV a partir de texto usando una voz predefinida (stock). "
+        "Soporta voces en múltiples idiomas con control de velocidad y parámetros de generación avanzados. "
+        "Opcionalmente puedes usar `instruct` para voice design libre sin necesidad de una voz clonada."
+    ),
 )
 async def synthesize_tts(
     text: Annotated[str, Body(min_length=1, description="Texto a sintetizar")],
@@ -132,6 +145,7 @@ async def synthesize_tts(
     fade_duration: Annotated[float, Body(ge=0.0, le=1.0, description="Duración fade-in/out (segundos)")] = 0.1,
     audio_chunk_duration: Annotated[float, Body(ge=1.0, le=60.0, description="Duración target por chunk (segundos)")] = 15.0,
     audio_chunk_threshold: Annotated[float, Body(ge=5.0, le=120.0, description="Umbral para activar chunking (segundos)")] = 30.0,
+    stream: Annotated[bool, Query(description="Streaming por chunks (SSE-style)")] = False,
     accept: Annotated[str | None, Header(description="Tipo de contenido esperado")] = None,
     tts_service: TtsService = Depends(get_tts_service),
 ) -> Response:
@@ -169,8 +183,13 @@ async def synthesize_tts(
     except Exception as e:
         _handle_tts_error(e)
 
-    media_type = "audio/wav"
-    return Response(content=result.wav_bytes, media_type=media_type)
+    if stream:
+        return StreamingResponse(
+            _stream_wav(result.wav_bytes),
+            media_type="audio/wav",
+            headers={"Content-Length": str(len(result.wav_bytes))},
+        )
+    return Response(content=result.wav_bytes, media_type="audio/wav")
 
 
 # --- POST /tts/instruct — Custom instruct ---
@@ -179,7 +198,11 @@ async def synthesize_tts(
     responses={200: {"content": {"audio/wav": {}}}},
     response_class=Response,
     summary="Sintetizar texto con instruct personalizado",
-    description="Voice design libre: especifica atributos del hablante directamente.",
+    description=(
+        "Voice design libre: especifica atributos del hablante directamente mediante un instruct "
+        "(ej: 'female, young adult, british accent'). No requiere una voz clonada. "
+        "Útil para generar voces personalizadas sobre la marcha."
+    ),
 )
 async def synthesize_instruct(
     text: Annotated[str, Body(min_length=1, description="Texto a sintetizar")],
@@ -197,6 +220,7 @@ async def synthesize_instruct(
     fade_duration: Annotated[float, Body(ge=0.0, le=1.0, description="Fade-in/out")] = 0.1,
     audio_chunk_duration: Annotated[float, Body(ge=1.0, le=60.0, description="Duración target por chunk")] = 15.0,
     audio_chunk_threshold: Annotated[float, Body(ge=5.0, le=120.0, description="Umbral para chunking")] = 30.0,
+    stream: Annotated[bool, Query(description="Streaming por chunks")] = False,
     accept: Annotated[str | None, Header(description="Tipo de contenido esperado")] = None,
     tts_service: TtsService = Depends(get_tts_service),
 ) -> Response:
@@ -224,6 +248,12 @@ async def synthesize_instruct(
     except Exception as e:
         _handle_tts_error(e)
 
+    if stream:
+        return StreamingResponse(
+            _stream_wav(result.wav_bytes),
+            media_type="audio/wav",
+            headers={"Content-Length": str(len(result.wav_bytes))},
+        )
     return Response(content=result.wav_bytes, media_type="audio/wav")
 
 

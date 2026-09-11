@@ -7,10 +7,8 @@ dist/
 build/
 
 # ─── Docker ───
-# (normalmente no se suben imágenes, solo Dockerfile y compose)
 .dockerignore
-docker-compose*.yml
-Dockerfile*
+#docker-compose*.yml
 
 # ─── Aider ───
 .aider.chat.history.md
@@ -50,3 +48,8 @@ data/voices/
 .cache/
 .huggingface/
 .transformers/
+.coverage
+coverage.xml
+storage/omnivoice.db
+uv.lock
+debug_*.py

@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from omnivoice_api.settings import get_settings
 from omnivoice_api.core.omnivoice_engine import get_engine, close_engine
 from omnivoice_api.core.cleanup import start_cleanup_task, stop_cleanup_task
-from omnivoice_api.middleware import RequestIDMiddleware
+from omnivoice_api.middleware import RequestIDMiddleware, APIKeyMiddleware
 from omnivoice_api.api.v1 import voices, tts, conversations
 
 
@@ -118,6 +118,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(APIKeyMiddleware, api_key=settings.API_KEY)
 
 # --- Rate limiting (slowapi) ---
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -165,9 +166,9 @@ async def liveness() -> JSONResponse:
 async def readiness() -> JSONResponse:
     engine = await get_engine()
     health = await engine.health_check()
-    settings = get_settings()
-    install_dir_exists = settings.OMNIVOICE_INSTALL_DIR.exists()
-    venv_python_exists = settings.python_bin.exists()
+    from omnivoice_api.core.engine_paths import default_install_dir
+    install_dir_exists = default_install_dir().exists()
+    venv_python_exists = get_settings().python_bin.exists()
     ready = install_dir_exists and venv_python_exists and health["model_loaded"]
     return JSONResponse(
         content={

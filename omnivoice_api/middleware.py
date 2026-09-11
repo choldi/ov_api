@@ -1,4 +1,4 @@
-"""Middleware para request_id, rate limiting y métricas."""
+"""Middleware para request_id, API key y rate limiting."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ import time
 import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Agrega un request_id único a cada petición y lo incluye en los logs."""
+    """Agrega un request_id único a cada petición."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
@@ -24,3 +24,43 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         response.headers["X-Response-Time"] = f"{elapsed_ms:.1f}ms"
 
         return response
+
+
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Valida API key opcional.
+
+    Si settings.API_KEY está vacío, todas las peticiones pasan sin autenticación.
+    Si tiene un valor, se requiere el header `X-API-Key` o query param `api_key`.
+    Los endpoints /docs, /redoc, /openapi.json, /metrics y /api/v1/health* siempre son públicos.
+    """
+
+    PUBLIC_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/metrics"}
+
+    def __init__(self, app, api_key: str = "") -> None:
+        super().__init__(app)
+        self._api_key = api_key
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        if not self._api_key:
+            return await call_next(request)
+
+        path = request.url.path
+
+        # Endpoints públicos
+        if path in self.PUBLIC_PATHS:
+            return await call_next(request)
+        if path.startswith("/api/v1/health"):
+            return await call_next(request)
+
+        # Verificar header o query param
+        provided_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+        if provided_key == self._api_key:
+            return await call_next(request)
+
+        return JSONResponse(
+            status_code=401,
+            content={
+                "detail": "API key inválida o no proporcionada",
+                "error_type": "unauthorized",
+            },
+        )

@@ -1,7 +1,7 @@
 # OmniVoice API
 
 API REST para síntesis de voz (TTS) multilingüe, clonado de voz zero-shot y
-control de emoción, basada en **OmniVoice (k2-fsa)**.
+voice design libre, basada en **OmniVoice (k2-fsa)**.
 
 > ⚠️ **OmniVoice NO se instala como dependencia de este proyecto.**
 > Se consume desde una instalación externa. Ver
@@ -12,7 +12,7 @@ control de emoción, basada en **OmniVoice (k2-fsa)**.
 
 - 🎙️ **TTS multilingüe** con voces stock predefinidas
 - 🔄 **Clonado de voz zero-shot** a partir de 5-30s de audio de referencia
-- 😊 **Control de emoción** (neutral, happy, sad, angry, surprised) con intensidad ajustable
+- 🎨 **Voice design libre** con tokens de atributos (género, edad, acento, tono)
 - 💬 **Conversaciones multi-voz** con turnos y pausas configurables
 - ⚡ **Optimizado para GPU** (NVIDIA P2000, 5GB VRAM) con concurrencia controlada
 - 📦 **Persistencia SQLite** para metadatos de voces clonadas
@@ -97,9 +97,9 @@ Variables principales:
 ### Conversaciones (Sprint 3)
 - `POST /api/v1/conversations` - Generar diálogo multi-voz
 
-### Emociones (Sprint 4)
-- `GET /api/v1/emotions` - Emociones soportadas
-- `POST /api/v1/tts` - Añade `emotion` e `intensity`
+### Voice Design (Instruct)
+- `POST /api/v1/tts/instruct` - Síntesis con instruct personalizado
+- `GET /api/v1/tts/voice-design/tokens` - Lista tokens válidos
 
 ## Ejemplos de uso
 
@@ -111,9 +111,7 @@ curl -X POST "http://localhost:8000/api/v1/tts" \
     "text": "Hola, esto es una prueba.",
     "voice_id": "es-mx-male",
     "language": "es",
-    "speed": 1.0,
-    "emotion": "happy",
-    "intensity": 0.8
+    "speed": 1.0
   }' \
   --output output.wav
 ```
@@ -123,8 +121,18 @@ Parámetros:
 - `voice_id` (requerido): ID de la voz (ej: `es-mx-male`, `en-us-female`)
 - `language` (requerido): Código ISO 639-1 (ej: `es`, `en`)
 - `speed` (opcional): Velocidad 0.5-2.0, default 1.0
-- `emotion` (opcional): `neutral`, `happy`, `sad`, `angry`, `surprised`
-- `intensity` (opcional): Intensidad de la emoción 0.0-1.0
+
+### TTS con voice design (instruct)
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts/instruct" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello, this is a custom voice.",
+    "instruct": "female, young adult, british accent",
+    "language": "en"
+  }' \
+  --output output.wav
+```
 
 ### Clonar voz
 ```bash

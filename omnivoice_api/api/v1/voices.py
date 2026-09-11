@@ -41,34 +41,40 @@ async def get_voice_service() -> VoiceService:
         pass  # Service cleanup handled elsewhere if needed
 
 
-@router.get("/stock", response_model=list[StockVoice])
+@router.get(
+    "/stock",
+    response_model=list[StockVoice],
+    summary="Listar voces stock disponibles",
+    description=(
+        "Devuelve la lista de voces predefinidas (stock) disponibles en el motor. "
+        "Cada voz incluye voice_id, idioma, género y nombre. "
+        "Opcionalmente filtrar por idioma (ISO 639-1)."
+    ),
+)
 async def list_stock_voices(
     language: str | None = Query(None, description="Filtrar por idioma (ISO 639-1)"),
     engine_client: OmniVoiceEngineClient = Depends(get_engine_client),
 ) -> list[StockVoice]:
-    """
-    Lista las voces stock disponibles.
-    
-    Opcionalmente filtradas por idioma.
-    """
     voices = await engine_client.list_stock_voices(language)
     return voices
 
 
-@router.post("/clone", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/clone",
+    status_code=status.HTTP_201_CREATED,
+    summary="Clonar voz desde audio de referencia",
+    description=(
+        "Clona una voz a partir de un archivo de audio de referencia. "
+        "El audio debe ser WAV o FLAC, mono, 22050 Hz. "
+        "La voz clonada se almacena y puede usarse en llamadas subsiguientes a /tts."
+    ),
+)
 async def clone_voice(
     name: str = Form(..., description="Nombre único para la voz clonada"),
     language: str = Form(..., description="Idioma del audio de referencia (ISO 639-1)"),
-    reference_audio: UploadFile = File(..., description="Archivo de audio de referencia"),
+    reference_audio: UploadFile = File(..., description="Archivo de audio de referencia (WAV, FLAC)"),
     voice_service: VoiceService = Depends(get_voice_service),
 ) -> dict:
-    """
-    Clona una voz desde un archivo de audio de referencia.
-    
-    - **name**: Nombre único para la voz clonada
-    - **language**: Idioma del audio de referencia (ISO 639-1)
-    - **reference_audio**: Archivo de audio de referencia (WAV, FLAC, etc.)
-    """
     # Validate file type
     if not reference_audio.filename:
         raise HTTPException(
