@@ -1,13 +1,10 @@
-"""Audio validation and processing utilities."""
+"""Audio validation and processing for voice cloning."""
 
 from __future__ import annotations
 
-from datetime import datetime
+import tempfile
 from pathlib import Path
-from typing import Any
-import hashlib
 
-import numpy as np
 import soundfile as sf
 from loguru import logger
 
@@ -20,162 +17,95 @@ class AudioValidator:
     
     def __init__(self):
         self._settings = get_settings()
-        self._target_sample_rate = 22050  # OmniVoice standard
-        self._target_channels = 1  # Mono
-        self._min_duration_sec = 0.5  # Minimum reference audio duration
-        self._max_duration_sec = 30.0  # Maximum reference audio duration
+        self._target_sample_rate = 22050
+        self._target_channels = 1
 
     async def validate_and_prepare(
         self,
         audio_path: Path | str,
         language: str,
-    ) -> dict[str, Any]:
-        """Validate reference audio and prepare it for voice cloning.
+    ) -> tuple[Path, float]:
+        """Validate and convert reference audio to required format.
         
         Args:
-            audio_path: Path to the reference audio file
-            language: Expected language of the audio (for validation)
+            audio_path: Path to the input audio file
+            language: Language code (ISO 639-1)
             
         Returns:
-            dict containing:
-                - processed_path: Path to the processed audio file
-                - duration_sec: Duration in seconds
-                - sample_rate: Sample rate in Hz
-                - channels: Number of audio channels
-                
+            tuple: (path_to_processed_audio, duration_in_seconds)
+            
         Raises:
-            InvalidReferenceAudioError: If the audio is invalid for voice cloning
-            FileNotFoundError: If the audio file doesn't exist
+            InvalidReferenceAudioError: If audio is invalid or cannot be processed
         """
         audio_path = Path(audio_path)
         
         if not audio_path.exists():
-            raise FileNotFoundError(f"Reference audio not found: {audio_path}")
+            raise InvalidReferenceAudioError(f"Audio file not found: {audio_path}")
+        
+        # Check file size
+        file_size_mb = audio_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > self._settings.MAX_UPLOAD_SIZE_MB:
+            raise InvalidReferenceAudioError(
+                f"Audio file too large: {file_size_mb:.1f}MB > {self._settings.MAX_UPLOAD_SIZE_MB}MB"
+            )
         
         try:
-            # Read audio file info
-            with sf.SoundFile(audio_path) as sound_file:
-                sample_rate = sound_file.samplerate
-                channels = sound_file.channels
-                duration_sec = len(sound_file) / sample_rate
-                
-                # Validate duration
-                if duration_sec < self._min_duration_sec:
-                    raise InvalidReferenceAudioError(
-                        f"Audio too short: {duration_sec:.2f}s (minimum {self._min_duration_sec}s)"
-                    )
-                
-                if duration_sec > self._max_duration_sec:
-                    raise InvalidReferenceAudioError(
-                        f"Audio too long: {duration_sec:.2f}s (maximum {self._max_duration_sec}s)"
-                    )
-                
-                # Validate sample rate (warn but don't fail - we'll resample)
-                if sample_rate < 8000 or sample_rate > 48000:
-                    raise InvalidReferenceAudioError(
-                        f"Unusual sample rate: {sample_rate}Hz (recommended 8000-48000Hz)"
-                    )
-                
-                # Process audio: convert to target sample rate and mono if needed
-                processed_path = await self._process_audio(
-                    audio_path, 
-                    sample_rate, 
-                    channels, 
-                    duration_sec
+            # Read audio info
+            info = sf.info(audio_path)
+            
+            # Validate duration
+            if info.duration < 1.0:
+                raise InvalidReferenceAudioError(
+                    f"Audio too short: {info.duration:.1f}s (minimum 1.0s)"
                 )
-                
-                return {
-                    "processed_path": str(processed_path),
-                    "duration_sec": duration_sec,
-                    "sample_rate": sample_rate,
-                    "channels": channels,
-                }
-                
-        except sf.SoundFileError as e:
-            raise InvalidReferenceAudioError(f"Invalid audio file: {e}") from e
+            
+            if info.duration > self._settings.MAX_REFERENCE_DURATION_SEC:
+                raise InvalidReferenceAudioError(
+                    f"Audio too long: {info.duration:.1f}s (maximum {self._settings.MAX_REFERENCE_DURATION_SEC}s)"
+                )
+            
+            # Check sample rate and channels
+            needs_conversion = (
+                info.samplerate != self._target_sample_rate or 
+                info.channels != self._target_channels
+            )
+            
+            if not needs_conversion:
+                # Already in correct format
+                return audio_path, info.duration
+            
+            # Convert audio
+            logger.info(
+                f"Converting audio: {info.samplerate}Hz {info.channels}ch -> "
+                f"{self._target_sample_rate}Hz {self._target_channels}ch"
+            )
+            
+            # Read and resample
+            audio_data, _ = sf.read(audio_path, dtype='float32')
+            
+            # Convert to mono if needed
+            if info.channels > 1:
+                audio_data = audio_data.mean(axis=1)
+            
+            # Resample if needed
+            if info.samplerate != self._target_sample_rate:
+                import librosa
+                audio_data = librosa.resample(
+                    audio_data, 
+                    orig_sr=info.samplerate, 
+                    target_sr=self._target_sample_rate
+                )
+            
+            # Write to temporary file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+                sf.write(tmp_path, audio_data, self._target_sample_rate, subtype='PCM_16')
+            
+            # Verify output
+            out_info = sf.info(tmp_path)
+            return tmp_path, out_info.duration
+            
+        except InvalidReferenceAudioError:
+            raise
         except Exception as e:
-            if isinstance(e, InvalidReferenceAudioError):
-                raise
-            raise InvalidReferenceAudioError(f"Error processing audio: {e}") from e
-
-    async def _process_audio(
-        self,
-        audio_path: Path,
-        original_sample_rate: int,
-        original_channels: int,
-        duration_sec: float,
-    ) -> Path:
-        """Process audio to meet OmniVoice requirements.
-        
-        Args:
-            audio_path: Path to the original audio file
-            original_sample_rate: Original sample rate in Hz
-            original_channels: Original number of channels
-            duration_sec: Duration in seconds
-            
-        Returns:
-            Path: Path to the processed audio file
-        """
-        # Load audio data
-        data, samplerate = sf.read(audio_path)
-        
-        # Convert to mono if needed
-        if original_channels > 1:
-            # Average all channels for mono conversion
-            if data.ndim > 1:
-                data = data.mean(axis=1)
-            logger.debug(
-                f"Converted audio from {original_channels} channels to mono"
-            )
-        
-        # Resample if needed
-        if original_sample_rate != self._target_sample_rate:
-            # Calculate resampling ratio
-            ratio = self._target_sample_rate / original_sample_rate
-            new_length = int(len(data) * ratio)
-            
-            # Use numpy for resampling (linear interpolation)
-            old_indices = np.arange(len(data))
-            new_indices = np.linspace(0, len(data) - 1, new_length)
-            data = np.interp(new_indices, old_indices, data)
-            
-            logger.debug(
-                f"Resampled audio from {original_sample_rate}Hz to {self._target_sample_rate}Hz"
-            )
-        
-        # Ensure correct data type (float32 in range [-1, 1])
-        if data.dtype != np.float32:
-            if data.dtype.kind == 'i':  # Integer types
-                # Normalize to [-1, 1] based on bit depth
-                bits = np.iinfo(data.dtype).bits
-                data = data.astype(np.float32) / (2**(bits-1))
-            else:
-                data = data.astype(np.float32)
-        
-        # Clip to valid range
-        data = np.clip(data, -1.0, 1.0)
-        
-        # Generate processed file path
-        storage_dir = Path(self._settings.VOICES_DIR)
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create a unique filename based on original path and timestamp
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        hash_suffix = hashlib.md5(str(audio_path).encode()).hexdigest()[:8]
-        processed_filename = f"reference_{timestamp}_{hash_suffix}.wav"
-        processed_path = storage_dir / processed_filename
-        
-        # Write processed audio
-        sf.write(
-            processed_path,
-            data,
-            self._target_sample_rate,
-            subtype='PCM_16',  # 16-bit PCM as per conventions
-        )
-        
-        logger.info(
-            f"Processed reference audio: {audio_path} -> {processed_path} "
-            f"({self._target_sample_rate}Hz, mono, 16-bit PCM)"
-        )
-        
-        return processed_path
+            raise InvalidReferenceAudioError(f"Failed to process audio: {e}")
