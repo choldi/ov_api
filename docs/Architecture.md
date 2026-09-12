@@ -2,7 +2,7 @@
 
 ## 1. Visión general
 
-Servicio HTTP que expone las capacidades de OmniVoice (k2-fsa) —TTS multilingüe, clonado zero-shot, control de emoción— como API REST versionada, con persistencia de voces clonadas y generación de conversaciones multi-voz.
+Servicio HTTP que expone las capacidades de ModelsLab/omnivoice-singing (finetune de k2-fsa/OmniVoice) —TTS multilingüe, clonado zero-shot, voice design, emociones y singing— como API REST versionada, con persistencia de voces clonadas y generación de conversaciones multi-voz.
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ flowchart LR
 - serialización a JSON o streaming binario
 
 ### 2.2 Services Layer (services/)
-- TtsService: síntesis con voz stock o clonada, control de emoción
+- TtsService: síntesis con voz stock o clonada
 - VoiceService: alta/baja/listado de voces clonadas, validación de audio
 - ConversationService: genera turnos de diálogo concatenando TTS
 
@@ -39,7 +39,6 @@ flowchart LR
   - Cargar modelo una sola vez (singleton)
   - Sintetizar con voz stock {language, speaker_id}
   - Sintetizar con voz clonada {reference_audio_path, text}
-  - Aplicar emoción {emotion, intensity}
   - Serializar WAV en memoria (BytesIO)
 
 ### 2.5 Storage
@@ -76,11 +75,11 @@ sequenceDiagram
     participant S as TtsService
     participant R as VoiceRepository
     participant E as Engine
-    C->>A: POST /api/v1/tts {voice_id, text, emotion}
+    C->>A: POST /api/v1/tts {voice_id, text}
     A->>S: synthesize(dto)
     S->>R: get_voice(voice_id)
     R-->>S: voice(ref_path)
-    S->>E: tts_clone(ref_path, text, emotion)
+    S->>E: tts_clone(ref_path, text)
     E->>E: load embedding (cache)
     E->>E: model.generate()
     E-->>S: WAV bytes
@@ -98,7 +97,7 @@ sequenceDiagram
 
 ## 6. Errores y resiliencia
 
-- EngineUnavailable, VoiceNotFound, InvalidReferenceAudio, UnsupportedLanguage, UnsupportedEmotion, VRAMOutError
+- EngineUnavailable, VoiceNotFound, InvalidReferenceAudio, UnsupportedLanguage, UnsupportedInstruct, VRAMOutError
 - Handler global → application/problem+json
 - Health endpoint /api/v1/health comprueba: GPU disponible, modelo cargado, DB accesible
 - /api/v1/health/live vs /api/v1/health/ready

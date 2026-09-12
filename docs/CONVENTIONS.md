@@ -4,7 +4,7 @@
 
 - Python: 3.11+
 - Framework HTTP: FastAPI + Uvicorn (asyncio)
-- TTS Engine: OmniVoice (k2-fsa) sobre PyTorch + CUDA (NVIDIA P2000, 5 GB VRAM)
+- TTS Engine: ModelsLab/omnivoice-singing (finetune de k2-fsa/OmniVoice) sobre PyTorch + CUDA (NVIDIA P2000, 5 GB VRAM)
 - Validación: Pydantic v2
 - Persistencia: SQLite (metadatos) + filesystem (audio). Reservado slot para migrar a Postgres.
 - Testing: pytest + pytest-asyncio + httpx (AsyncClient) + pytest-cov

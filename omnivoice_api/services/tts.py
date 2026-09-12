@@ -45,6 +45,7 @@ class TtsService:
         voice_id: str,
         language: str,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz stock."""
@@ -56,6 +57,7 @@ class TtsService:
                 voice_id=voice_id,
                 language=language,
                 speed=speed,
+                emotion=emotion,
                 generation_params=generation_params,
             )
         except VoiceNotFoundError:
@@ -79,6 +81,7 @@ class TtsService:
             text=text,
             voice_id=voice_id,
             speed=speed,
+            emotion=emotion,
             generation_params=generation_params,
         )
 
@@ -89,6 +92,7 @@ class TtsService:
         instruct: str,
         language: str,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> AudioResult:
         """Sintetiza texto con instruct personalizado (voice design libre)."""
@@ -101,6 +105,7 @@ class TtsService:
             text=text,
             instruct=instruct,
             speed=speed,
+            emotion=emotion,
             generation_params=generation_params,
         )
 
@@ -112,6 +117,7 @@ class TtsService:
         language: str,
         speed: float = 1.0,
         instruct: str | None = None,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz clonada."""
@@ -129,6 +135,7 @@ class TtsService:
             reference_audio_path=reference_audio_path,
             instruct=instruct,
             speed=speed,
+            emotion=emotion,
             generation_params=generation_params,
         )
 

@@ -39,8 +39,12 @@
 - [x] Tests unitarios e integración
 - [ ] Ejemplo docs/examples/dialogue.py
 
-## Sprint 4 — Emociones ⏭️ OMITIDO
-- Decisión de diseño: emociones removidas en Sprint 2.
+## Sprint 4 — Emociones ✅ (vía ModelsLab/omnivoice-singing)
+- [x] Modelo ModelsLab/omnivoice-singing con tags de emoción y singing
+- [x] Parámetro `emotion` en POST /tts y POST /tts/instruct
+- [x] Endpoint GET /api/v1/emotions
+- [x] Validación de emociones soportadas (400 con lista de válidas)
+- [x] Tests actualizados
 
 ## Sprint 5 — Rendimiento y robustez ✅
 - [x] EnginePool con semáforo (core/engine_pool.py)

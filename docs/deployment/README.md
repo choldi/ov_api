@@ -33,6 +33,7 @@ docker run -d \
 
 | Variable | Descripción | Default |
 |----------|-------------|---------|
+| `OMNIVOICE_MODEL_ID` | Modelo a usar (HuggingFace) | `ModelsLab/omnivoice-singing` |
 | `OMNIVOICE_PATH` | Ruta a la instalación de OmniVoice | Requerida |
 | `OMNIVOICE_FALLBACK_TO_MOCK` | Fallback a mock si el engine falla | `true` |
 | `API_KEY` | API key opcional (vacío = sin auth) | `""` |
@@ -111,11 +112,20 @@ curl http://localhost:8000/api/v1/health/ready
 # Listar voces stock
 curl http://localhost:8000/api/v1/voices/stock
 
+# Listar emociones soportadas
+curl http://localhost:8000/api/v1/emotions
+
 # Probar TTS
 curl -X POST http://localhost:8000/api/v1/tts \
   -H "Content-Type: application/json" \
   -d '{"text":"Hola mundo","voice_id":"es-mx-male","language":"es"}' \
   --output test.wav
+
+# Probar TTS con emoción
+curl -X POST http://localhost:8000/api/v1/tts \
+  -H "Content-Type: application/json" \
+  -d '{"text":"¡Qué alegría!","voice_id":"es-mx-male","language":"es","emotion":"happy"}' \
+  --output happy.wav
 ```
 
 ## Monitoreo

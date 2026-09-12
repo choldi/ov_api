@@ -44,6 +44,7 @@ from omnivoice_api.core.omnivoice_engine import get_engine, close_engine
 from omnivoice_api.core.cleanup import start_cleanup_task, stop_cleanup_task
 from omnivoice_api.middleware import RequestIDMiddleware, APIKeyMiddleware
 from omnivoice_api.api.v1 import voices, tts, conversations
+from omnivoice_api.core.omnivoice_engine import SUPPORTED_EMOTIONS
 
 
 @asynccontextmanager
@@ -145,6 +146,29 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_sch
 app.include_router(voices.router, prefix="/api/v1")
 app.include_router(tts.router, prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
+
+
+@app.get("/api/v1/emotions", tags=["tts"], summary="Listar emociones soportadas")
+async def list_emotions() -> list[dict]:
+    """Devuelve la lista de emociones soportadas por el modelo.
+
+    Las emociones se aplican como tags de texto (prefijos) en el contenido sintetizado.
+    Ejemplo: ``[happy] ¡Qué alegría verte!``
+    """
+    descriptions = {
+        "happy": "Tono alegre y contento",
+        "sad": "Tono melancólico o triste",
+        "angry": "Tono enfadado o iracundo",
+        "excited": "Tono entusiasmado y enérgico",
+        "calm": "Tono sereno y relajado",
+        "nervous": "Tono tenso o ansioso",
+        "whisper": "Voz susurrada",
+        "singing": "Estilo cantado / melódico",
+    }
+    return [
+        {"id": e, "name": e.capitalize(), "description": descriptions.get(e, "")}
+        for e in SUPPORTED_EMOTIONS
+    ]
 
 
 @app.get("/api/v1/health", tags=["Health"])

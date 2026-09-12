@@ -135,6 +135,7 @@ async def test_synthesize_clone_success() -> None:
         reference_audio_path="/path/to/ref.wav",
         instruct=None,
         speed=1.0,
+        emotion=None,
         generation_params=None,
     )
 

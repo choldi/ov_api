@@ -2,6 +2,19 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 
+## [0.6.0] - 2026-09-12
+
+### Added
+- Emociones y singing via `ModelsLab/omnivoice-singing` (drop-in replacement de k2-fsa/OmniVoice)
+- Tags de emoción soportados: `happy`, `sad`, `angry`, `excited`, `calm`, `nervous`, `whisper`, `singing`
+- Parámetro `emotion` en `POST /api/v1/tts` y `POST /api/v1/tts/instruct`
+- Endpoint `GET /api/v1/emotions` — lista emociones soportadas
+- Variable de entorno `OMNIVOICE_MODEL_ID` configurable (default: `ModelsLab/omnivoice-singing`)
+
+### Changed
+- Modelo por defecto cambiado de `k2-fsa/OmniVoice` a `ModelsLab/omnivoice-singing`
+- Documentación de API actualizada (api_spec_simplified.md) con endpoints de emociones y parámetros de generación
+
 ## [0.5.0] - 2025-01-XX
 
 ### Added

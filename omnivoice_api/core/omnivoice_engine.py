@@ -35,6 +35,24 @@ VALID_INSTRUCT_TOKENS_EN: list[str] = [
     "portuguese accent", "russian accent",
 ]
 
+# --- Emotion tags (ModelsLab/omnivoice-singing) ---
+# Se aplican como prefijos de texto: "[happy] Hello!" → modelo genera con emoción.
+SUPPORTED_EMOTIONS: list[str] = [
+    "happy", "sad", "angry", "excited", "calm", "nervous", "whisper", "singing",
+]
+
+# Mapeo de emociones a tags del modelo (formato [tag]).
+_EMOTION_TAG_MAP: dict[str, str] = {
+    "happy": "[happy]",
+    "sad": "[sad]",
+    "angry": "[angry]",
+    "excited": "[excited]",
+    "calm": "[calm]",
+    "nervous": "[nervous]",
+    "whisper": "[whisper]",
+    "singing": "[singing]",
+}
+
 # Mapeo de voces stock a instructs válidos para model.generate(instruct=...).
 STOCK_VOICE_INSTRUCTS: dict[str, str] = {
     "es-mx-male": "male, portuguese accent",
@@ -70,6 +88,22 @@ VALID_INSTRUCT_TOKENS_ZH: list[str] = [
     "河南话", "陕西话", "四川话", "贵州话", "云南话", "桂林话",
     "济南话", "石家庄话", "甘肃话", "宁夏话", "青岛话", "东北话",
 ]
+
+
+def _apply_emotion(text: str, emotion: str | None) -> str:
+    """Aplica un tag de emoción como prefijo al texto.
+
+    El modelo (ModelsLab/omnivoice-singing) procesa tags como [happy], [sad], etc.
+    como prefijos del texto. Si el texto ya contiene el tag, no se duplica.
+    """
+    if not emotion:
+        return text
+    tag = _EMOTION_TAG_MAP.get(emotion.lower())
+    if tag is None:
+        return text
+    if tag in text:
+        return text
+    return f"{tag} {text}"
 
 
 def _validate_instruct(instruct: str) -> None:
@@ -136,6 +170,7 @@ class OmniVoiceEngineInterface(Protocol):
         text: str,
         voice_id: str,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> bytes:
         ...
@@ -146,6 +181,7 @@ class OmniVoiceEngineInterface(Protocol):
         text: str,
         instruct: str,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> bytes:
         ...
@@ -157,6 +193,7 @@ class OmniVoiceEngineInterface(Protocol):
         reference_audio_path: str,
         instruct: str | None = None,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> bytes:
         ...
@@ -389,10 +426,11 @@ class OmniVoiceEngine:
         text: str,
         voice_id: str,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> bytes:
         """Sintetiza con voz stock usando voice design."""
-        logger.debug("synthesize_stock: voice_id=%s, text_len=%d", voice_id, len(text))
+        logger.debug("synthesize_stock: voice_id=%s, text_len=%d, emotion=%s", voice_id, len(text), emotion)
 
         voice = next((v for v in self._stock_voices if v["voice_id"] == voice_id), None)
         if not voice:
@@ -411,7 +449,7 @@ class OmniVoiceEngine:
 
         try:
             kwargs = params.to_kwargs()
-            kwargs["text"] = text
+            kwargs["text"] = _apply_emotion(text, emotion)
             kwargs["instruct"] = instruct
             kwargs["speed"] = speed
             audio = await asyncio.to_thread(self._model.generate, **kwargs)
@@ -426,10 +464,11 @@ class OmniVoiceEngine:
         text: str,
         instruct: str,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> bytes:
         """Sintetiza con instruct personalizado (voice design libre)."""
-        logger.debug("synthesize_instruct: instruct=%s, text_len=%d", instruct, len(text))
+        logger.debug("synthesize_instruct: instruct=%s, text_len=%d, emotion=%s", instruct, len(text), emotion)
 
         _validate_instruct(instruct)
 
@@ -445,7 +484,7 @@ class OmniVoiceEngine:
 
         try:
             kwargs = params.to_kwargs()
-            kwargs["text"] = text
+            kwargs["text"] = _apply_emotion(text, emotion)
             kwargs["instruct"] = instruct
             kwargs["speed"] = speed
             audio = await asyncio.to_thread(self._model.generate, **kwargs)
@@ -461,10 +500,11 @@ class OmniVoiceEngine:
         reference_audio_path: str,
         instruct: str | None = None,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> bytes:
         """Sintetiza con voz clonada, opcionalmente con instruct."""
-        logger.debug("synthesize_clone: ref=%s, text_len=%d", reference_audio_path, len(text))
+        logger.debug("synthesize_clone: ref=%s, text_len=%d, emotion=%s", reference_audio_path, len(text), emotion)
 
         import os
         if not self._use_mock and not os.path.exists(reference_audio_path):
@@ -482,7 +522,7 @@ class OmniVoiceEngine:
 
         try:
             kwargs = params.to_kwargs()
-            kwargs["text"] = text
+            kwargs["text"] = _apply_emotion(text, emotion)
             kwargs["ref_audio"] = reference_audio_path
             kwargs["speed"] = speed
             if instruct:

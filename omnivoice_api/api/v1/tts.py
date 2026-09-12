@@ -10,6 +10,7 @@ from fastapi.responses import Response, StreamingResponse
 from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
 from omnivoice_api.core.omnivoice_engine import (
     VALID_INSTRUCT_TOKENS_EN,
+    SUPPORTED_EMOTIONS,
     GenerationParams,
 )
 from omnivoice_api.core.exceptions import (
@@ -124,7 +125,7 @@ def _handle_tts_error(e: Exception) -> None:
     summary="Sintetizar texto a voz con voz stock",
     description=(
         "Genera audio WAV a partir de texto usando una voz predefinida (stock). "
-        "Soporta voces en múltiples idiomas con control de velocidad y parámetros de generación avanzados. "
+        "Soporta voces en múltiples idiomas con control de velocidad, emoción y parámetros de generación avanzados. "
         "Opcionalmente puedes usar `instruct` para voice design libre sin necesidad de una voz clonada."
     ),
 )
@@ -134,6 +135,7 @@ async def synthesize_tts(
     language: Annotated[str, Body(description="Idioma del texto (ISO 639-1)")],
     speed: Annotated[float, Body(ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
     instruct: Annotated[str | None, Body(description="Instruct personalizado (voice design libre)")] = None,
+    emotion: Annotated[str | None, Body(description="Emoción a aplicar al texto (tag como prefijo)")] = None,
     # Generation params
     num_step: Annotated[int, Body(ge=1, le=100, description="Pasos de unmasking (mayor = mejor calidad)")] = 32,
     denoise: Annotated[bool, Body(description="Aplicar denoise para voz más limpia")] = True,
@@ -150,6 +152,16 @@ async def synthesize_tts(
     tts_service: TtsService = Depends(get_tts_service),
 ) -> Response:
     """Sintetiza texto a voz con voz stock o clonada."""
+    if emotion and emotion.lower() not in SUPPORTED_EMOTIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "detail": f"Emoción no soportada: {emotion}",
+                "error_type": "unsupported_emotion",
+                "emotion": emotion,
+                "supported_emotions": SUPPORTED_EMOTIONS,
+            },
+        )
     try:
         gen_params = _build_generation_params(
             num_step, denoise, guidance_scale, duration,
@@ -166,6 +178,7 @@ async def synthesize_tts(
                     instruct=instruct,
                     language=language,
                     speed=speed,
+                    emotion=emotion,
                     generation_params=gen_params,
                 )
             else:
@@ -174,6 +187,7 @@ async def synthesize_tts(
                     voice_id=voice_id,
                     language=language,
                     speed=speed,
+                    emotion=emotion,
                     generation_params=gen_params,
                 )
         finally:
@@ -209,6 +223,7 @@ async def synthesize_instruct(
     instruct: Annotated[str, Body(description="Instruct de voice design (ej: 'female, young adult, british accent')")],
     language: Annotated[str, Body(description="Idioma del texto (ISO 639-1)")],
     speed: Annotated[float, Body(ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
+    emotion: Annotated[str | None, Body(description="Emoción a aplicar al texto (tag como prefijo)")] = None,
     # Generation params
     num_step: Annotated[int, Body(ge=1, le=100, description="Pasos de unmasking")] = 32,
     denoise: Annotated[bool, Body(description="Aplicar denoise")] = True,
@@ -225,6 +240,16 @@ async def synthesize_instruct(
     tts_service: TtsService = Depends(get_tts_service),
 ) -> Response:
     """Sintetiza texto con un instruct de voice design personalizado."""
+    if emotion and emotion.lower() not in SUPPORTED_EMOTIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "detail": f"Emoción no soportada: {emotion}",
+                "error_type": "unsupported_emotion",
+                "emotion": emotion,
+                "supported_emotions": SUPPORTED_EMOTIONS,
+            },
+        )
     try:
         gen_params = _build_generation_params(
             num_step, denoise, guidance_scale, duration,
@@ -239,6 +264,7 @@ async def synthesize_instruct(
                 instruct=instruct,
                 language=language,
                 speed=speed,
+                emotion=emotion,
                 generation_params=gen_params,
             )
         finally:

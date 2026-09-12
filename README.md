@@ -1,7 +1,8 @@
 # OmniVoice API
 
-API REST para síntesis de voz (TTS) multilingüe, clonado de voz zero-shot y
-voice design libre, basada en **OmniVoice (k2-fsa)**.
+API REST para síntesis de voz (TTS) multilingüe, clonado de voz zero-shot,
+voice design libre y emociones, basada en **ModelsLab/omnivoice-singing**
+(finetune de [k2-fsa/OmniVoice](https://huggingface.co/k2-fsa/OmniVoice)).
 
 > ⚠️ **OmniVoice NO se instala como dependencia de este proyecto.**
 > Se consume desde una instalación externa. Ver
@@ -11,6 +12,7 @@ voice design libre, basada en **OmniVoice (k2-fsa)**.
 ## Características
 
 - 🎙️ **TTS multilingüe** con voces stock predefinidas
+- 🎭 **Emociones y singing** con tags: `happy`, `sad`, `angry`, `excited`, `calm`, `nervous`, `whisper`, `singing`
 - 🔄 **Clonado de voz zero-shot** a partir de 5-30s de audio de referencia
 - 🎨 **Voice design libre** con tokens de atributos (género, edad, acento, tono)
 - 💬 **Conversaciones multi-voz** con turnos y pausas configurables
@@ -97,6 +99,9 @@ Variables principales:
 ### Conversaciones (Sprint 3)
 - `POST /api/v1/conversations` - Generar diálogo multi-voz
 
+### Emociones y Singing
+- `GET /api/v1/emotions` - Lista emociones soportadas
+
 ### Voice Design (Instruct)
 - `POST /api/v1/tts/instruct` - Síntesis con instruct personalizado
 - `GET /api/v1/tts/voice-design/tokens` - Lista tokens válidos
@@ -121,6 +126,32 @@ Parámetros:
 - `voice_id` (requerido): ID de la voz (ej: `es-mx-male`, `en-us-female`)
 - `language` (requerido): Código ISO 639-1 (ej: `es`, `en`)
 - `speed` (opcional): Velocidad 0.5-2.0, default 1.0
+- `emotion` (opcional): Emoción (`happy`, `sad`, `angry`, `excited`, `calm`, `nervous`, `whisper`, `singing`)
+
+### TTS con emoción
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "¡Qué alegría verte hoy!",
+    "voice_id": "es-mx-male",
+    "language": "es",
+    "emotion": "happy"
+  }' \
+  --output happy.wav
+```
+
+### TTS con singing
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "[singing] Twinkle twinkle little star, how I wonder what you are.",
+    "voice_id": "en-us-female",
+    "language": "en"
+  }' \
+  --output singing.wav
+```
 
 ### TTS con voice design (instruct)
 ```bash

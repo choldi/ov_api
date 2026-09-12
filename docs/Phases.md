@@ -110,23 +110,18 @@ DoD
 
 ---
 
-## Sprint 4 — Emociones (2 días)
+## Sprint 4 — Emociones ✅ (vía ModelsLab/omnivoice-singing)
 
-Objetivo: control de emoción por síntesis.
+Implementado usando el modelo `ModelsLab/omnivoice-singing`, un finetune de k2-fsa/OmniVoice que agrega tags de emoción y singing.
 
-Endpoints
-- GET /api/v1/emotions → lista soportadas (neutral, happy, sad, angry, surprised)
-- POST /api/v1/tts añade emotion e intensity (0.0-1.0)
-- POST /api/v1/conversations permite emotion por turno
+**Tags soportados:** `happy`, `sad`, `angry`, `excited`, `calm`, `nervous`, `whisper`, `singing`
 
-Tareas
-- [ ] Mapeo emotion → parámetros del engine
-- [ ] Validación de intensidad
-- [ ] Tests parametrizados (pytest.mark.parametrize)
-- [ ] Ejemplo docs/examples/tts_emotion.sh
+**Endpoints:**
+- GET /api/v1/emotions → lista emociones soportadas
+- POST /api/v1/tts acepta parámetro `emotion`
+- POST /api/v1/tts/instruct acepta parámetro `emotion`
 
-DoD
-- Misma frase con happy y sad produce audios distinguibles (test espectral o mock específico)
+**Uso:** El parámetro `emotion` se aplica como tag de texto prefijo: `[happy] ¡Qué alegría!`
 
 ---
 

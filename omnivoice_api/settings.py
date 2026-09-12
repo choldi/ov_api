@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
 
     # --- OmniVoice Engine ---
-    OMNIVOICE_MODEL_ID: str = "k2-fsa/OmniVoice"
+    OMNIVOICE_MODEL_ID: str = "ModelsLab/omnivoice-singing"
     OMNIVOICE_DTYPE: Literal["float16", "float32", "int8"] = "float16"
     OMNIVOICE_WARMUP_ON_START: bool = False
     OMNIVOICE_DEVICE: str = "cuda:0"
