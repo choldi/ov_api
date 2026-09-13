@@ -62,7 +62,7 @@ help:
 	@echo "  make dev                  - Inicia servidor en modo desarrollo (reload)"
 	@echo "  make check-gpu            - Verifica disponibilidad de GPU/CUDA"
 	@echo "  make check-omnivoice-install - Verifica la instalación externa de OmniVoice"
-	@echo "  make download-model       - Descarga modelo OmniVoice (placeholder)"
+	@echo "  make download-model       - Descarga modelo OmniVoice desde HuggingFace"
 	@echo "  make clean                - Limpia cachés y archivos temporales"
 	@echo "  make pre-commit           - Instala y ejecuta pre-commit hooks"
 	@echo ""
@@ -77,6 +77,8 @@ install: check-uv
 	uv sync --dev --project .
 	@echo "Instalando OmniVoice desde git..."
 	uv pip install git+https://github.com/k2-fsa/OmniVoice.git --python $(PYTHON_VENV)
+	@echo "Descargando modelo OmniVoice (ModelsLab/omnivoice-singing)..."
+	$(PYTHON_VENV) scripts/download_model.py
 	@echo "Entorno virtual creado y dependencias instaladas en $(VENV)"
 
 # Verifica que uv está disponible. Si no, intenta instalarlo.
@@ -148,12 +150,9 @@ check-omnivoice-install: install
 	@echo "Verificando instalación externa de OmniVoice..."
 	@$(PYTHON_VENV) scripts/check_omnivoice_install.py
 
-download-model: install
-	@echo "Descargando modelo OmniVoice..."
-	@echo "TODO: Implementar descarga real del modelo desde HuggingFace o fuente oficial"
-	@echo "Modelo esperado en: models/omnivoice/"
-	$(MKDIR_P) models/omnivoice
-	$(TOUCH) models/omnivoice/.gitkeep
+download-model:
+	@echo "Descargando modelo OmniVoice desde HuggingFace..."
+	$(PYTHON_VENV) scripts/download_model.py
 
 # Clean target with OS-specific commands
 ifeq ($(OS),Windows_NT)

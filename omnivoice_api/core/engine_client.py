@@ -219,7 +219,9 @@ class OmniVoiceEngineClient:
         text: str,
         voice_id: str,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
+        language: str | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz stock."""
         if not self._started:
@@ -235,7 +237,9 @@ class OmniVoiceEngineClient:
                 text=text,
                 voice_id=voice_id,
                 speed=speed,
+                emotion=emotion,
                 generation_params=generation_params,
+                language=language,
             )
         except Exception as e:
             elapsed = time.perf_counter() - start_time
@@ -265,7 +269,9 @@ class OmniVoiceEngineClient:
         text: str,
         instruct: str,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
+        language: str | None = None,
     ) -> AudioResult:
         """Sintetiza texto con instruct personalizado (voice design libre)."""
         if not self._started:
@@ -281,7 +287,9 @@ class OmniVoiceEngineClient:
                 text=text,
                 instruct=instruct,
                 speed=speed,
+                emotion=emotion,
                 generation_params=generation_params,
+                language=language,
             )
         except Exception as e:
             elapsed = time.perf_counter() - start_time
@@ -311,7 +319,9 @@ class OmniVoiceEngineClient:
         reference_audio_path: str,
         instruct: str | None = None,
         speed: float = 1.0,
+        emotion: str | None = None,
         generation_params: GenerationParams | None = None,
+        language: str | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz clonada, opcionalmente con instruct."""
         if not self._started:
@@ -328,7 +338,9 @@ class OmniVoiceEngineClient:
                 reference_audio_path=reference_audio_path,
                 instruct=instruct,
                 speed=speed,
+                emotion=emotion,
                 generation_params=generation_params,
+                language=language,
             )
         except Exception as e:
             elapsed = time.perf_counter() - start_time

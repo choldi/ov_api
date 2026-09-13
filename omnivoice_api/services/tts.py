@@ -83,6 +83,7 @@ class TtsService:
             speed=speed,
             emotion=emotion,
             generation_params=generation_params,
+            language=language,
         )
 
     async def synthesize_instruct(
@@ -107,6 +108,7 @@ class TtsService:
             speed=speed,
             emotion=emotion,
             generation_params=generation_params,
+            language=language,
         )
 
     async def synthesize_clone(
@@ -137,6 +139,7 @@ class TtsService:
             speed=speed,
             emotion=emotion,
             generation_params=generation_params,
+            language=language,
         )
 
     async def close(self) -> None:

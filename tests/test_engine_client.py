@@ -89,7 +89,8 @@ async def test_synthesize_stock_with_generation_params(engine_client: OmniVoiceE
         )
         assert isinstance(result, AudioResult)
         mock_engine.synthesize_stock.assert_called_once_with(
-            text="Hola", voice_id="es-mx-male", speed=1.0, generation_params=params,
+            text="Hola", voice_id="es-mx-male", speed=1.0, emotion=None,
+            generation_params=params, language=None,
         )
 
 

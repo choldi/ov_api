@@ -9,8 +9,11 @@ import pytest
 from omnivoice_api.core.omnivoice_engine import (
     OmniVoiceEngine,
     GenerationParams,
+    SUPPORTED_EMOTIONS,
     VALID_INSTRUCT_TOKENS_EN,
     STOCK_VOICE_INSTRUCTS,
+    _apply_emotion,
+    _map_language,
     _validate_instruct,
     get_engine,
     close_engine,
@@ -223,3 +226,109 @@ async def test_close_engine() -> None:
 @pytest.mark.asyncio
 async def test_close_engine_when_none() -> None:
     await close_engine()
+
+
+# --- Emotion tag tests ---
+
+def test_apply_emotion_basic():
+    assert _apply_emotion("Hello!", "happy") == "[happy] Hello!"
+
+
+def test_apply_emotion_case_insensitive():
+    assert _apply_emotion("Hello!", "HAPPY") == "[happy] Hello!"
+
+
+def test_apply_emotion_dedup():
+    assert _apply_emotion("[happy] Hello!", "happy") == "[happy] Hello!"
+
+
+def test_apply_emotion_none():
+    assert _apply_emotion("Hello!", None) == "Hello!"
+
+
+def test_apply_emotion_unsupported():
+    assert _apply_emotion("Hello!", "bored") == "Hello!"
+
+
+def test_apply_emotion_all_tags():
+    for emotion in SUPPORTED_EMOTIONS:
+        result = _apply_emotion("Test", emotion)
+        assert result.startswith("["), f"Emotion {emotion} should prepend a tag"
+
+
+def test_apply_emotion_singing():
+    assert _apply_emotion("Twinkle star", "singing") == "[singing] Twinkle star"
+
+
+# --- Language mapping tests ---
+
+def test_map_language_known():
+    assert _map_language("es") == "Spanish"
+    assert _map_language("en") == "English"
+    assert _map_language("zh") == "Chinese"
+    assert _map_language("ja") == "Japanese"
+
+
+def test_map_language_none():
+    assert _map_language(None) is None
+
+
+def test_map_language_unknown():
+    assert _map_language("xx") == "xx"
+
+
+# --- Engine synthesize with emotion ---
+
+@pytest.mark.asyncio
+async def test_engine_synthesize_stock_with_emotion(engine: OmniVoiceEngine) -> None:
+    wav = await engine.synthesize_stock(
+        text="Hello!",
+        voice_id="en-us-male",
+        emotion="happy",
+    )
+    assert isinstance(wav, bytes)
+    assert len(wav) > 0
+
+
+@pytest.mark.asyncio
+async def test_engine_synthesize_stock_with_emotion_and_language(engine: OmniVoiceEngine) -> None:
+    wav = await engine.synthesize_stock(
+        text="Hola mundo",
+        voice_id="es-mx-male",
+        emotion="sad",
+        language="es",
+    )
+    assert isinstance(wav, bytes)
+
+
+@pytest.mark.asyncio
+async def test_engine_synthesize_instruct_with_emotion(engine: OmniVoiceEngine) -> None:
+    wav = await engine.synthesize_instruct(
+        text="Welcome!",
+        instruct="female, british accent",
+        emotion="excited",
+        language="en",
+    )
+    assert isinstance(wav, bytes)
+
+
+@pytest.mark.asyncio
+async def test_engine_synthesize_clone_with_emotion(engine: OmniVoiceEngine) -> None:
+    wav = await engine.synthesize_clone(
+        text="Hello!",
+        reference_audio_path="/tmp/ref.wav",
+        emotion="angry",
+        language="en",
+    )
+    assert isinstance(wav, bytes)
+
+
+# --- Spanish accent validation ---
+
+def test_spanish_accent_in_valid_tokens():
+    assert "spanish accent" in VALID_INSTRUCT_TOKENS_EN
+
+
+def test_spanish_voice_instructs_use_spanish_accent():
+    for voice_id in ["es-mx-male", "es-mx-female", "es-es-male", "es-es-female"]:
+        assert "spanish accent" in STOCK_VOICE_INSTRUCTS[voice_id]

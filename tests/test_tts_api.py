@@ -116,3 +116,72 @@ async def test_tts_voice_design_tokens(async_client: AsyncClient) -> None:
     assert "male" in data["gender"]
     assert "english_accent" in data
     assert "chinese_dialect" in data
+
+
+# --- Emotion tests ---
+
+@pytest.mark.asyncio
+async def test_tts_stock_with_emotion(async_client: AsyncClient) -> None:
+    with patch("omnivoice_api.api.v1.tts.get_tts_service") as mock_dep:
+        mock_service = AsyncMock()
+        mock_service.synthesize_stock.return_value = AudioResult(
+            wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+        )
+        mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)
+        mock_dep.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        resp = await async_client.post(
+            "/api/v1/tts",
+            json={"text": "Hello!", "voice_id": "en-us-male", "language": "en", "emotion": "happy"},
+        )
+        assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_tts_unsupported_emotion(async_client: AsyncClient) -> None:
+    resp = await async_client.post(
+        "/api/v1/tts",
+        json={"text": "Hello!", "voice_id": "en-us-male", "language": "en", "emotion": "bored"},
+    )
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data["detail"]["error_type"] == "unsupported_emotion"
+
+
+@pytest.mark.asyncio
+async def test_tts_instruct_with_emotion(async_client: AsyncClient) -> None:
+    with patch("omnivoice_api.api.v1.tts.get_tts_service") as mock_dep:
+        mock_service = AsyncMock()
+        mock_service.synthesize_instruct.return_value = AudioResult(
+            wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+        )
+        mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)
+        mock_dep.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        resp = await async_client.post(
+            "/api/v1/tts/instruct",
+            json={"text": "Hello!", "instruct": "female, british accent", "language": "en", "emotion": "singing"},
+        )
+        assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_tts_unsupported_emotion_instruct(async_client: AsyncClient) -> None:
+    resp = await async_client.post(
+        "/api/v1/tts/instruct",
+        json={"text": "Hello!", "instruct": "female, british accent", "language": "en", "emotion": "bored"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_emotions_endpoint(async_client: AsyncClient) -> None:
+    resp = await async_client.get("/api/v1/emotions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 8
+    ids = [e["id"] for e in data]
+    assert "happy" in ids
+    assert "singing" in ids
+    assert "sad" in ids
+    assert "angry" in ids

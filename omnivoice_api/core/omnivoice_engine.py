@@ -32,7 +32,7 @@ VALID_INSTRUCT_TOKENS_EN: list[str] = [
     "whisper",
     "american accent", "australian accent", "british accent", "canadian accent",
     "chinese accent", "indian accent", "japanese accent", "korean accent",
-    "portuguese accent", "russian accent",
+    "portuguese accent", "russian accent", "spanish accent",
 ]
 
 # --- Emotion tags (ModelsLab/omnivoice-singing) ---
@@ -55,10 +55,10 @@ _EMOTION_TAG_MAP: dict[str, str] = {
 
 # Mapeo de voces stock a instructs válidos para model.generate(instruct=...).
 STOCK_VOICE_INSTRUCTS: dict[str, str] = {
-    "es-mx-male": "male, portuguese accent",
-    "es-mx-female": "female, portuguese accent",
-    "es-es-male": "male, portuguese accent",
-    "es-es-female": "female, portuguese accent",
+    "es-mx-male": "male, spanish accent",
+    "es-mx-female": "female, spanish accent",
+    "es-es-male": "male, spanish accent",
+    "es-es-female": "female, spanish accent",
     "en-us-male": "male, american accent",
     "en-us-female": "female, american accent",
     "en-gb-male": "male, british accent",
@@ -88,6 +88,28 @@ VALID_INSTRUCT_TOKENS_ZH: list[str] = [
     "河南话", "陕西话", "四川话", "贵州话", "云南话", "桂林话",
     "济南话", "石家庄话", "甘肃话", "宁夏话", "青岛话", "东北话",
 ]
+
+# Mapeo de códigos ISO 639-1 a nombres de idioma completos (para model.generate(language=...))
+_LANGUAGE_MAP: dict[str, str] = {
+    "es": "Spanish",
+    "en": "English",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "ru": "Russian",
+    "hi": "Hindi",
+}
+
+
+def _map_language(language: str | None) -> str | None:
+    """Mapea un código ISO 639-1 al nombre completo que el modelo espera."""
+    if not language:
+        return None
+    return _LANGUAGE_MAP.get(language.lower(), language)
 
 
 def _apply_emotion(text: str, emotion: str | None) -> str:
@@ -288,6 +310,19 @@ class OmniVoiceEngine:
             self._real_engine_error = reason
         self._stock_voices = self._get_mock_stock_voices()
 
+    def _resolve_model_source(self) -> str:
+        """Resuelve la fuente del modelo: directorio local o HuggingFace Hub ID.
+
+        Prioridad:
+          1. {OMNIVOICE_INSTALL_DIR}/models (descargado por make download-model)
+          2. OMNIVOICE_MODEL_ID (HuggingFace Hub ID, descarga bajo demanda)
+        """
+        local_path = self._settings.model_path
+        if local_path.is_dir() and (local_path / "config.json").exists():
+            return str(local_path)
+
+        return self._settings.OMNIVOICE_MODEL_ID
+
     async def initialize(self) -> None:
         """Inicializa el modelo."""
         if self._model is not None:
@@ -326,8 +361,11 @@ class OmniVoiceEngine:
         try:
             from omnivoice import OmniVoice
 
+            # Prefer local directory if it exists (downloaded by make download-model)
+            model_source = self._resolve_model_source()
+            logger.info("Cargando modelo desde: %s", model_source)
             self._model = OmniVoice.from_pretrained(
-                self._settings.OMNIVOICE_MODEL_ID,
+                model_source,
                 device_map=self._settings.OMNIVOICE_DEVICE,
                 dtype=_get_dtype(),
             )
@@ -428,6 +466,7 @@ class OmniVoiceEngine:
         speed: float = 1.0,
         emotion: str | None = None,
         generation_params: GenerationParams | None = None,
+        language: str | None = None,
     ) -> bytes:
         """Sintetiza con voz stock usando voice design."""
         logger.debug("synthesize_stock: voice_id=%s, text_len=%d, emotion=%s", voice_id, len(text), emotion)
@@ -452,6 +491,11 @@ class OmniVoiceEngine:
             kwargs["text"] = _apply_emotion(text, emotion)
             kwargs["instruct"] = instruct
             kwargs["speed"] = speed
+            lang = _map_language(language)
+            if lang:
+                kwargs["language"] = lang
+            if emotion and kwargs.get("guidance_scale", 2.0) == 2.0:
+                kwargs["guidance_scale"] = 3.0
             audio = await asyncio.to_thread(self._model.generate, **kwargs)
             return self._numpy_to_wav(audio)
         except Exception as e:
@@ -466,6 +510,7 @@ class OmniVoiceEngine:
         speed: float = 1.0,
         emotion: str | None = None,
         generation_params: GenerationParams | None = None,
+        language: str | None = None,
     ) -> bytes:
         """Sintetiza con instruct personalizado (voice design libre)."""
         logger.debug("synthesize_instruct: instruct=%s, text_len=%d, emotion=%s", instruct, len(text), emotion)
@@ -487,6 +532,11 @@ class OmniVoiceEngine:
             kwargs["text"] = _apply_emotion(text, emotion)
             kwargs["instruct"] = instruct
             kwargs["speed"] = speed
+            lang = _map_language(language)
+            if lang:
+                kwargs["language"] = lang
+            if emotion and kwargs.get("guidance_scale", 2.0) == 2.0:
+                kwargs["guidance_scale"] = 3.0
             audio = await asyncio.to_thread(self._model.generate, **kwargs)
             return self._numpy_to_wav(audio)
         except Exception as e:
@@ -502,6 +552,7 @@ class OmniVoiceEngine:
         speed: float = 1.0,
         emotion: str | None = None,
         generation_params: GenerationParams | None = None,
+        language: str | None = None,
     ) -> bytes:
         """Sintetiza con voz clonada, opcionalmente con instruct."""
         logger.debug("synthesize_clone: ref=%s, text_len=%d, emotion=%s", reference_audio_path, len(text), emotion)
@@ -525,6 +576,11 @@ class OmniVoiceEngine:
             kwargs["text"] = _apply_emotion(text, emotion)
             kwargs["ref_audio"] = reference_audio_path
             kwargs["speed"] = speed
+            lang = _map_language(language)
+            if lang:
+                kwargs["language"] = lang
+            if emotion and kwargs.get("guidance_scale", 2.0) == 2.0:
+                kwargs["guidance_scale"] = 3.0
             if instruct:
                 _validate_instruct(instruct)
                 kwargs["instruct"] = instruct

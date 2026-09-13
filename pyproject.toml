@@ -64,6 +64,8 @@ dependencies = [
     # La wheel correcta (cu124) se resuelve desde el index [[tool.uv.index]].
     "torch==2.5.1",
     "torchaudio==2.5.1",
+    # HuggingFace Hub para descarga de modelos (scripts/download_model.py)
+    "huggingface_hub>=0.25.0",
 ]
 
 [project.optional-dependencies]
