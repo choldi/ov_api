@@ -35,9 +35,11 @@ def _force_proactor_loop_factory() -> asyncio.AbstractEventLoop:
 
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from omnivoice_api.settings import get_settings
 from omnivoice_api.core.omnivoice_engine import get_engine, close_engine
@@ -142,6 +144,11 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
+# --- Static files (Web GUI) ---
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 # --- Routers ---
 app.include_router(voices.router, prefix="/api/v1")
 app.include_router(tts.router, prefix="/api/v1")
@@ -215,7 +222,10 @@ async def readiness() -> JSONResponse:
 
 
 @app.get("/", tags=["Root"])
-async def root() -> JSONResponse:
+async def root():
+    index = STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(str(index))
     return JSONResponse(
         content={
             "name": "OmniVoice API",
