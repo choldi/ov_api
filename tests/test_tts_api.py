@@ -14,6 +14,8 @@ from omnivoice_api.core.exceptions import (
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
+from omnivoice_api.main import app
+from omnivoice_api.api.v1.tts import get_tts_service
 
 
 def _make_wav() -> bytes:
@@ -185,3 +187,23 @@ async def test_list_emotions_endpoint(async_client: AsyncClient) -> None:
     assert "singing" in ids
     assert "sad" in ids
     assert "angry" in ids
+
+
+@pytest.mark.asyncio
+async def test_tts_designed_voice_via_stock_endpoint(async_client: AsyncClient) -> None:
+    """Test that a designed voice_id works through the /tts stock endpoint."""
+    mock_service = AsyncMock()
+    mock_service.synthesize_stock.return_value = AudioResult(
+        wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+    )
+
+    app.dependency_overrides[get_tts_service] = lambda: mock_service
+    try:
+        resp = await async_client.post(
+            "/api/v1/tts",
+            json={"text": "Hello!", "voice_id": "designed-uuid-1", "language": "en"},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/wav"
+    finally:
+        app.dependency_overrides.clear()

@@ -357,3 +357,152 @@ async def test_clone_voice_internal_error() -> None:
         assert response.status_code == 500
     finally:
         app.dependency_overrides.clear()
+
+
+# --- Designed voice endpoint tests ---
+
+
+@pytest.mark.asyncio
+async def test_create_designed_voice_success() -> None:
+    mock_service = AsyncMock()
+    mock_service.create_designed_voice.return_value = "designed-uuid-1"
+
+    async def override():
+        yield mock_service
+
+    app.dependency_overrides[get_voice_service] = override
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/voices/design",
+                json={
+                    "name": "British Female",
+                    "instruct": "female, young adult, british accent",
+                    "language": "en",
+                },
+            )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["voice_id"] == "designed-uuid-1"
+        assert data["name"] == "British Female"
+        assert data["instruct"] == "female, young adult, british accent"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_create_designed_voice_conflict() -> None:
+    mock_service = AsyncMock()
+    mock_service.create_designed_voice.side_effect = ValueError("already exists")
+
+    async def override():
+        yield mock_service
+
+    app.dependency_overrides[get_voice_service] = override
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/voices/design",
+                json={"name": "dup", "instruct": "male", "language": "en"},
+            )
+        assert response.status_code == 409
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_list_designed_voices() -> None:
+    mock_service = AsyncMock()
+    mock_service.list_designed_voices.return_value = [
+        {"id": "1", "name": "v1", "instruct": "male", "language": "en"},
+    ]
+
+    async def override():
+        yield mock_service
+
+    app.dependency_overrides[get_voice_service] = override
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/v1/voices/designed")
+        assert response.status_code == 200
+        assert len(response.json()) == 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_get_designed_voice_success() -> None:
+    mock_service = AsyncMock()
+    mock_service.get_designed_voice.return_value = {
+        "id": "test-id", "name": "v1", "instruct": "male", "language": "en",
+    }
+
+    async def override():
+        yield mock_service
+
+    app.dependency_overrides[get_voice_service] = override
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/v1/voices/designed/test-id")
+        assert response.status_code == 200
+        assert response.json()["id"] == "test-id"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_get_designed_voice_not_found() -> None:
+    mock_service = AsyncMock()
+    mock_service.get_designed_voice.side_effect = VoiceNotFoundError("test-id")
+
+    async def override():
+        yield mock_service
+
+    app.dependency_overrides[get_voice_service] = override
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/v1/voices/designed/test-id")
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_delete_designed_voice_success() -> None:
+    mock_service = AsyncMock()
+    mock_service.delete_designed_voice.return_value = True
+
+    async def override():
+        yield mock_service
+
+    app.dependency_overrides[get_voice_service] = override
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete("/api/v1/voices/designed/test-id")
+        assert response.status_code == 204
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_delete_designed_voice_not_found() -> None:
+    mock_service = AsyncMock()
+    mock_service.delete_designed_voice.side_effect = VoiceNotFoundError("test-id")
+
+    async def override():
+        yield mock_service
+
+    app.dependency_overrides[get_voice_service] = override
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.delete("/api/v1/voices/designed/test-id")
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()

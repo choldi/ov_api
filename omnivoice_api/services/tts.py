@@ -48,7 +48,14 @@ class TtsService:
         emotion: str | None = None,
         generation_params: GenerationParams | None = None,
     ) -> AudioResult:
-        """Sintetiza texto con voz stock."""
+        """Sintetiza texto con voz stock, designed o clonada.
+
+        Lookup order:
+          1. Cloned voice (reference audio)
+          2. Designed voice (instruct preset from DB)
+          3. Stock voice (hardcoded instruct mapping)
+        """
+        # 1. Try cloned voice
         try:
             voice_service = await self._get_voice_service()
             voice_data = await voice_service.get_voice(voice_id)
@@ -65,6 +72,25 @@ class TtsService:
         except Exception:
             pass
 
+        # 2. Try designed voice (instruct preset from DB)
+        try:
+            voice_service = await self._get_voice_service()
+            designed = await voice_service.get_designed_voice(voice_id)
+            engine = await self._get_engine_client()
+            return await engine.synthesize_instruct(
+                text=text,
+                instruct=designed["instruct"],
+                speed=speed,
+                emotion=emotion,
+                generation_params=generation_params,
+                language=language,
+            )
+        except VoiceNotFoundError:
+            pass
+        except Exception:
+            pass
+
+        # 3. Fall back to stock voices (hardcoded)
         engine = await self._get_engine_client()
 
         stock_voices = await engine.list_stock_voices(language)

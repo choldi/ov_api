@@ -252,3 +252,137 @@ async def test_list_empty(repo: VoiceRepository) -> None:
     await repo.initialize()
     voices = await repo.list()
     assert voices == []
+
+
+# --- Designed voices tests ---
+
+
+@pytest.mark.asyncio
+async def test_initialize_creates_designed_voices_schema(repo: VoiceRepository) -> None:
+    """Test que initialize crea la tabla designed_voices."""
+    await repo.initialize()
+    conn = await repo._get_connection()
+    try:
+        cursor = await conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='designed_voices'"
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_create_designed_voice(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    voice_id = await repo.create_designed_voice(
+        name="british-female",
+        instruct="female, young adult, british accent",
+        language="en",
+    )
+    assert voice_id is not None
+    assert len(voice_id) == 36
+
+
+@pytest.mark.asyncio
+async def test_create_designed_voice_duplicate_name(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    await repo.create_designed_voice(
+        name="british-female",
+        instruct="female, young adult, british accent",
+        language="en",
+    )
+    with pytest.raises(ValueError, match="already exists"):
+        await repo.create_designed_voice(
+            name="british-female",
+            instruct="female, elderly, british accent",
+            language="en",
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_designed_voice(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    voice_id = await repo.create_designed_voice(
+        name="british-female",
+        instruct="female, young adult, british accent",
+        language="en",
+    )
+    voice = await repo.get_designed_voice(voice_id)
+    assert voice["id"] == voice_id
+    assert voice["name"] == "british-female"
+    assert voice["instruct"] == "female, young adult, british accent"
+    assert voice["language"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_get_designed_voice_not_found(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    with pytest.raises(VoiceNotFoundError):
+        await repo.get_designed_voice(str(uuid4()))
+
+
+@pytest.mark.asyncio
+async def test_get_designed_voice_by_name(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    voice_id = await repo.create_designed_voice(
+        name="british-female",
+        instruct="female, young adult, british accent",
+        language="en",
+    )
+    voice = await repo.get_designed_voice_by_name("british-female")
+    assert voice["id"] == voice_id
+
+
+@pytest.mark.asyncio
+async def test_list_designed_voices(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    await repo.create_designed_voice(name="v1", instruct="male", language="en")
+    await repo.create_designed_voice(name="v2", instruct="female", language="es")
+    voices = await repo.list_designed_voices()
+    assert len(voices) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_designed_voices_filter_language(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    await repo.create_designed_voice(name="v1", instruct="male", language="en")
+    await repo.create_designed_voice(name="v2", instruct="female", language="es")
+    voices = await repo.list_designed_voices(language="en")
+    assert len(voices) == 1
+    assert voices[0]["language"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_delete_designed_voice(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    voice_id = await repo.create_designed_voice(
+        name="british-female",
+        instruct="female, young adult, british accent",
+        language="en",
+    )
+    deleted = await repo.delete_designed_voice(voice_id)
+    assert deleted is True
+    with pytest.raises(VoiceNotFoundError):
+        await repo.get_designed_voice(voice_id)
+
+
+@pytest.mark.asyncio
+async def test_delete_designed_voice_not_found(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    deleted = await repo.delete_designed_voice(str(uuid4()))
+    assert deleted is False
+
+
+@pytest.mark.asyncio
+async def test_update_designed_voice(repo: VoiceRepository) -> None:
+    await repo.initialize()
+    voice_id = await repo.create_designed_voice(
+        name="british-female",
+        instruct="female, young adult, british accent",
+        language="en",
+    )
+    updated = await repo.update_designed_voice(voice_id, name="british-woman")
+    assert updated is True
+    voice = await repo.get_designed_voice(voice_id)
+    assert voice["name"] == "british-woman"

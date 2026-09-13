@@ -1,4 +1,4 @@
-"""Repository for managing cloned voices in SQLite."""
+"""Repository for managing voices (cloned + designed) in SQLite."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from omnivoice_api.settings import get_settings
 
 
 class VoiceRepository:
-    """Repository for cloned voices using SQLite."""
+    """Repository for cloned + designed voices using SQLite."""
 
     def __init__(self, db_path: str | None = None):
         """Initialize the repository with database path."""
@@ -53,12 +53,24 @@ class VoiceRepository:
                     created_at   TEXT NOT NULL,
                     metadata     TEXT                     -- JSON extendido
                 );
-                
-                CREATE INDEX IF NOT EXISTS idx_cloned_voices_language 
+
+                CREATE INDEX IF NOT EXISTS idx_cloned_voices_language
                 ON cloned_voices(language);
-                
-                CREATE INDEX IF NOT EXISTS idx_cloned_voices_created_at 
+
+                CREATE INDEX IF NOT EXISTS idx_cloned_voices_created_at
                 ON cloned_voices(created_at);
+
+                CREATE TABLE IF NOT EXISTS designed_voices (
+                    id           TEXT PRIMARY KEY,        -- UUIDv4
+                    name         TEXT NOT NULL UNIQUE,
+                    instruct     TEXT NOT NULL,           -- voice design instruct
+                    language     TEXT NOT NULL,           -- ISO 639-1
+                    created_at   TEXT NOT NULL,
+                    metadata     TEXT                     -- JSON extendido
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_designed_voices_language
+                ON designed_voices(language);
                 """
             )
             await conn.commit()
@@ -341,16 +353,193 @@ class VoiceRepository:
             await conn.close()
 
     async def voice_exists(self, voice_id: str) -> bool:
-        """Check if a voice exists by ID.
-        
-        Args:
-            voice_id: The UUID to check
-            
-        Returns:
-            bool: True if the voice exists
-        """
+        """Check if a voice exists by ID."""
         try:
             await self.get_by_id(voice_id)
             return True
         except VoiceNotFoundError:
             return False
+
+    # --- Designed voices (instruct-based presets) ---
+
+    async def create_designed_voice(
+        self,
+        name: str,
+        instruct: str,
+        language: str,
+        metadata: dict | None = None,
+    ) -> str:
+        """Create a new designed voice record."""
+        voice_id = str(uuid4())
+        now = datetime.utcnow().isoformat()
+        metadata_json = json.dumps(metadata or {})
+
+        conn = await self._get_connection()
+        try:
+            await conn.execute(
+                """
+                INSERT INTO designed_voices
+                (id, name, instruct, language, created_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (voice_id, name, instruct, language, now, metadata_json),
+            )
+            await conn.commit()
+            logger.info(f"Created designed voice '{name}' with ID {voice_id}")
+            return voice_id
+        except aiosqlite.IntegrityError as e:
+            if "UNIQUE constraint failed: designed_voices.name" in str(e):
+                raise ValueError(f"Designed voice with name '{name}' already exists") from e
+            raise
+        finally:
+            await conn.close()
+
+    async def get_designed_voice(self, voice_id: str) -> dict:
+        """Get a designed voice by its ID."""
+        conn = await self._get_connection()
+        try:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                "SELECT id, name, instruct, language, created_at, metadata "
+                "FROM designed_voices WHERE id = ?",
+                (voice_id,),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                raise VoiceNotFoundError(voice_id, "designed")
+            return {
+                "id": row["id"],
+                "name": row["name"],
+                "instruct": row["instruct"],
+                "language": row["language"],
+                "created_at": row["created_at"],
+                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+            }
+        finally:
+            await conn.close()
+
+    async def get_designed_voice_by_name(self, name: str) -> dict:
+        """Get a designed voice by its name."""
+        conn = await self._get_connection()
+        try:
+            conn.row_factory = aiosqlite.Row
+            cursor = await conn.execute(
+                "SELECT id, name, instruct, language, created_at, metadata "
+                "FROM designed_voices WHERE name = ?",
+                (name,),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                raise VoiceNotFoundError(name, "designed (by name)")
+            return {
+                "id": row["id"],
+                "name": row["name"],
+                "instruct": row["instruct"],
+                "language": row["language"],
+                "created_at": row["created_at"],
+                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+            }
+        finally:
+            await conn.close()
+
+    async def list_designed_voices(
+        self,
+        language: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        """List designed voices with optional filtering."""
+        conn = await self._get_connection()
+        try:
+            conn.row_factory = aiosqlite.Row
+            if language:
+                cursor = await conn.execute(
+                    "SELECT id, name, instruct, language, created_at, metadata "
+                    "FROM designed_voices WHERE language = ? "
+                    "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (language, limit, offset),
+                )
+            else:
+                cursor = await conn.execute(
+                    "SELECT id, name, instruct, language, created_at, metadata "
+                    "FROM designed_voices ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                )
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "instruct": row["instruct"],
+                    "language": row["language"],
+                    "created_at": row["created_at"],
+                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                }
+                for row in rows
+            ]
+        finally:
+            await conn.close()
+
+    async def update_designed_voice(
+        self,
+        voice_id: str,
+        name: str | None = None,
+        instruct: str | None = None,
+        metadata: dict | None = None,
+    ) -> bool:
+        """Update a designed voice."""
+        updates = []
+        params = []
+
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        if instruct is not None:
+            updates.append("instruct = ?")
+            params.append(instruct)
+        if metadata is not None:
+            current = await self.get_designed_voice(voice_id)
+            merged = {**current["metadata"], **metadata}
+            updates.append("metadata = ?")
+            params.append(json.dumps(merged))
+
+        if not updates:
+            return False
+
+        updates.append("created_at = ?")
+        params.append(datetime.utcnow().isoformat())
+        params.append(voice_id)
+
+        conn = await self._get_connection()
+        try:
+            cursor = await conn.execute(
+                f"UPDATE designed_voices SET {', '.join(updates)} WHERE id = ?",
+                params,
+            )
+            await conn.commit()
+            updated = cursor.rowcount > 0
+            if updated:
+                logger.info(f"Updated designed voice {voice_id}")
+            return updated
+        except aiosqlite.IntegrityError as e:
+            if "UNIQUE constraint failed: designed_voices.name" in str(e):
+                raise ValueError(f"Designed voice with name '{name}' already exists") from e
+            raise
+        finally:
+            await conn.close()
+
+    async def delete_designed_voice(self, voice_id: str) -> bool:
+        """Delete a designed voice by its ID."""
+        conn = await self._get_connection()
+        try:
+            cursor = await conn.execute(
+                "DELETE FROM designed_voices WHERE id = ?",
+                (voice_id,),
+            )
+            await conn.commit()
+            deleted = cursor.rowcount > 0
+            if deleted:
+                logger.info(f"Deleted designed voice {voice_id}")
+            return deleted
+        finally:
+            await conn.close()

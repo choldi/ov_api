@@ -1,4 +1,4 @@
-"""Service for voice cloning operations."""
+"""Service for voice operations (cloning + designed)."""
 
 from __future__ import annotations
 
@@ -14,15 +14,17 @@ from omnivoice_api.core.audio import AudioValidator
 from omnivoice_api.core.embedding_cache import EmbeddingCache, get_embedding_cache
 from omnivoice_api.core.exceptions import (
     InvalidReferenceAudioError,
+    UnsupportedInstructError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
+from omnivoice_api.core.omnivoice_engine import _validate_instruct
 from omnivoice_api.repositories.voice_repository import VoiceRepository
 from omnivoice_api.settings import get_settings
 
 
 class VoiceService:
-    """Service for voice cloning operations."""
+    """Service for voice operations (cloning + designed)."""
 
     def __init__(
         self,
@@ -150,3 +152,52 @@ class VoiceService:
     async def voice_exists(self, voice_id: str) -> bool:
         """Check if a voice exists."""
         return await self._repository.voice_exists(voice_id)
+
+    # --- Designed voices (instruct-based presets) ---
+
+    async def create_designed_voice(
+        self,
+        name: str,
+        instruct: str,
+        language: str,
+    ) -> str:
+        """Create a designed voice from an instruct string.
+
+        Validates the instruct tokens before saving.
+
+        Raises:
+            ValueError: If voice name already exists
+            UnsupportedLanguageError: If language is not supported
+            UnsupportedInstructError: If instruct contains invalid tokens
+        """
+        if language not in self._settings.omnilang_list:
+            raise UnsupportedLanguageError(language, self._settings.omnilang_list)
+
+        _validate_instruct(instruct)
+
+        voice_id = await self._repository.create_designed_voice(
+            name=name,
+            instruct=instruct,
+            language=language,
+        )
+        logger.info(f"Designed voice created: {name} ({voice_id})")
+        return voice_id
+
+    async def get_designed_voice(self, voice_id: str) -> dict:
+        """Get a designed voice by ID."""
+        return await self._repository.get_designed_voice(voice_id)
+
+    async def list_designed_voices(
+        self,
+        language: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict]:
+        """List designed voices with optional filtering."""
+        return await self._repository.list_designed_voices(
+            language=language, limit=limit, offset=offset,
+        )
+
+    async def delete_designed_voice(self, voice_id: str) -> bool:
+        """Delete a designed voice."""
+        return await self._repository.delete_designed_voice(voice_id)

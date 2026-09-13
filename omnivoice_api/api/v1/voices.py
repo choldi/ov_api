@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, status, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, status, UploadFile
 from fastapi.responses import JSONResponse
 
 from omnivoice_api.core.engine_client import OmniVoiceEngineClient, StockVoice
 from omnivoice_api.core.exceptions import (
     InvalidReferenceAudioError,
+    UnsupportedInstructError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
@@ -166,7 +167,7 @@ async def delete_cloned_voice(
 ) -> None:
     """
     Elimina una voz clonada por su ID.
-    
+
     - **voice_id**: UUID de la voz clonada
     """
     try:
@@ -180,4 +181,119 @@ async def delete_cloned_voice(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Voz clonada no encontrada: {e.voice_id}"
+        )
+
+
+# --- Designed voices (instruct-based presets) ---
+
+
+@router.post(
+    "/design",
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear voz por voice design (instruct)",
+    description=(
+        "Crea una voz a partir de un instruct de voice design. "
+        "El instruct define atributos del hablante (ej: 'female, young adult, british accent'). "
+        "La voz se guarda como preset reutilizable en llamadas a /tts."
+    ),
+)
+async def create_designed_voice(
+    name: str = Body(..., description="Nombre único para la voz"),
+    instruct: str = Body(..., description="Instruct de voice design (ej: 'female, young adult, british accent')"),
+    language: str = Body(..., description="Idioma principal (ISO 639-1)"),
+    voice_service: VoiceService = Depends(get_voice_service),
+) -> dict:
+    try:
+        voice_id = await voice_service.create_designed_voice(
+            name=name,
+            instruct=instruct,
+            language=language,
+        )
+        return {
+            "voice_id": voice_id,
+            "name": name,
+            "instruct": instruct,
+            "language": language,
+            "message": f"Voz diseñada '{name}' creada exitosamente",
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
+    except UnsupportedLanguageError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except UnsupportedInstructError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "detail": str(e),
+                "error_type": "unsupported_instruct",
+                "invalid_items": [
+                    {"token": token, "suggestion": sug}
+                    for token, sug in e.invalid_items.items()
+                ],
+                "valid_tokens": e.valid_items,
+            },
+        )
+
+
+@router.get(
+    "/designed",
+    response_model=list[dict],
+    summary="Listar voces diseñadas",
+    description="Lista las voces diseñadas (instruct-based presets) guardadas.",
+)
+async def list_designed_voices(
+    language: str | None = Query(None, description="Filtrar por idioma (ISO 639-1)"),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    voice_service: VoiceService = Depends(get_voice_service),
+) -> list[dict]:
+    return await voice_service.list_designed_voices(
+        language=language, limit=limit, offset=offset,
+    )
+
+
+@router.get(
+    "/designed/{voice_id}",
+    response_model=dict,
+    summary="Obtener voz diseñada por ID",
+)
+async def get_designed_voice(
+    voice_id: str,
+    voice_service: VoiceService = Depends(get_voice_service),
+) -> dict:
+    try:
+        return await voice_service.get_designed_voice(voice_id)
+    except VoiceNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Voz diseñada no encontrada: {e.voice_id}",
+        )
+
+
+@router.delete(
+    "/designed/{voice_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar voz diseñada",
+)
+async def delete_designed_voice(
+    voice_id: str,
+    voice_service: VoiceService = Depends(get_voice_service),
+) -> None:
+    try:
+        deleted = await voice_service.delete_designed_voice(voice_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Voz diseñada no encontrada: {voice_id}",
+            )
+    except VoiceNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Voz diseñada no encontrada: {e.voice_id}",
         )

@@ -17,7 +17,7 @@ from omnivoice_api.services.tts import TtsService
 
 @pytest.mark.asyncio
 async def test_synthesize_stock_fallback_to_stock_voice() -> None:
-    """Test de fallback a voz stock cuando la voz clonada no existe."""
+    """Test de fallback a voz stock cuando la voz clonada y diseñada no existen."""
     mock_engine = AsyncMock()
     mock_engine.list_stock_voices.return_value = [
         MagicMock(voice_id="es-mx-male", language="es"),
@@ -28,6 +28,7 @@ async def test_synthesize_stock_fallback_to_stock_voice() -> None:
 
     mock_voice_service = AsyncMock()
     mock_voice_service.get_voice.side_effect = VoiceNotFoundError("es-mx-male")
+    mock_voice_service.get_designed_voice.side_effect = VoiceNotFoundError("es-mx-male")
 
     service = TtsService(engine_client=mock_engine, voice_service=mock_voice_service)
     result = await service.synthesize_stock(
@@ -52,6 +53,7 @@ async def test_synthesize_stock_fallback_on_other_exception() -> None:
 
     mock_voice_service = AsyncMock()
     mock_voice_service.get_voice.side_effect = RuntimeError("DB error")
+    mock_voice_service.get_designed_voice.side_effect = VoiceNotFoundError("es-mx-male")
 
     service = TtsService(engine_client=mock_engine, voice_service=mock_voice_service)
     result = await service.synthesize_stock(
@@ -85,6 +87,67 @@ async def test_synthesize_stock_cloned_voice() -> None:
     )
     assert result.wav_bytes == b"cloned-wav"
     mock_engine.synthesize_clone.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_synthesize_stock_designed_voice() -> None:
+    """Test de síntesis con voz diseñada (instruct preset from DB)."""
+    mock_engine = AsyncMock()
+    mock_engine.synthesize_instruct.return_value = AudioResult(
+        wav_bytes=b"designed-wav", duration_sec=1.5, sample_rate=22050,
+    )
+
+    mock_voice_service = AsyncMock()
+    mock_voice_service.get_voice.side_effect = VoiceNotFoundError("designed-id")
+    mock_voice_service.get_designed_voice.return_value = {
+        "id": "designed-id",
+        "name": "British Female",
+        "instruct": "female, young adult, british accent",
+        "language": "en",
+    }
+
+    service = TtsService(engine_client=mock_engine, voice_service=mock_voice_service)
+    result = await service.synthesize_stock(
+        text="Hello",
+        voice_id="designed-id",
+        language="en",
+    )
+    assert result.wav_bytes == b"designed-wav"
+    mock_engine.synthesize_instruct.assert_called_once_with(
+        text="Hello",
+        instruct="female, young adult, british accent",
+        speed=1.0,
+        emotion=None,
+        generation_params=None,
+        language="en",
+    )
+
+
+@pytest.mark.asyncio
+async def test_synthesize_stock_designed_voice_not_found_falls_to_stock() -> None:
+    """Test de fallback a stock cuando la voz clonada y diseñada no existen."""
+    mock_engine = AsyncMock()
+    mock_engine.list_stock_voices.return_value = [
+        MagicMock(voice_id="es-mx-male", language="es"),
+    ]
+    mock_engine.synthesize_stock.return_value = AudioResult(
+        wav_bytes=b"stock-wav", duration_sec=1.0, sample_rate=22050,
+    )
+
+    mock_voice_service = AsyncMock()
+    mock_voice_service.get_voice.side_effect = VoiceNotFoundError("es-mx-male")
+    mock_voice_service.get_designed_voice.side_effect = VoiceNotFoundError("es-mx-male")
+
+    service = TtsService(engine_client=mock_engine, voice_service=mock_voice_service)
+    result = await service.synthesize_stock(
+        text="Hola",
+        voice_id="es-mx-male",
+        language="es",
+    )
+    assert result.wav_bytes == b"stock-wav"
+    mock_engine.synthesize_stock.assert_called_once()
+    mock_voice_service.get_voice.assert_called_once_with("es-mx-male")
+    mock_voice_service.get_designed_voice.assert_called_once_with("es-mx-male")
 
 
 @pytest.mark.asyncio
@@ -137,6 +200,7 @@ async def test_synthesize_clone_success() -> None:
         speed=1.0,
         emotion=None,
         generation_params=None,
+        language="es",
     )
 
 
