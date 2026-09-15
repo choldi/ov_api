@@ -13,6 +13,7 @@ from omnivoice_api.core.exceptions import (
     VoiceNotFoundError,
 )
 from omnivoice_api.services.conversation import ConversationService, ConversationTurn
+from omnivoice_api.services.tts import TtsService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -28,11 +29,12 @@ def _stream_wav(wav_bytes: bytes, chunk_size: int = WAV_CHUNK_SIZE):
 async def get_conversation_service() -> ConversationService:
     """Dependency para obtener el servicio de conversaciones."""
     engine_client = OmniVoiceEngineClient()
-    service = ConversationService(engine_client=engine_client)
+    tts_service = TtsService(engine_client=engine_client)
+    service = ConversationService(engine_client=engine_client, tts_service=tts_service)
     try:
         yield service
     finally:
-        await service.close()
+        await tts_service.close()
 
 
 @router.post(
@@ -42,19 +44,19 @@ async def get_conversation_service() -> ConversationService:
     summary="Generar conversación multi-voz",
     description=(
         "Genera audio de una conversación entre dos o más voces. "
-        "Cada turno especifica una voz y texto. Los turnos se concatenan con silencios configurables. "
-        "Útil para crear diálogos, entrevistas, o contenido multi-personaje."
+        "Cada turno especifica una voz, texto e idioma. Los turnos se concatenan con silencios configurables. "
+        "Soporta voces stock, clonadas y diseñadas."
     ),
 )
 async def generate_conversation(
     turns: Annotated[
         list[dict],
         Body(
-            description="Lista de turnos. Cada turno tiene 'voice_id' y 'text'. Mínimo 2 turnos.",
+            description="Lista de turnos. Cada turno tiene 'voice_id', 'text' y opcionalmente 'language'. Mínimo 2 turnos.",
             examples=[
                 [
-                    {"voice_id": "es-mx-male", "text": "Hola, ¿cómo estás?"},
-                    {"voice_id": "es-mx-female", "text": "Muy bien, gracias"},
+                    {"voice_id": "es-mx-male", "text": "Hola, ¿cómo estás?", "language": "es"},
+                    {"voice_id": "es-mx-female", "text": "Muy bien, gracias", "language": "es"},
                 ]
             ],
         ),
@@ -68,7 +70,6 @@ async def generate_conversation(
 ) -> Response:
     """Genera audio de una conversación multi-voz."""
     try:
-        # Validar turnos
         if not turns or len(turns) < 2:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -97,7 +98,11 @@ async def generate_conversation(
                     },
                 )
             conversation_turns.append(
-                ConversationTurn(voice_id=turn["voice_id"], text=turn["text"])
+                ConversationTurn(
+                    voice_id=turn["voice_id"],
+                    text=turn["text"],
+                    language=turn.get("language", "es"),
+                )
             )
 
         result = await tts_service.generate(

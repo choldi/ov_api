@@ -79,7 +79,7 @@ async def test_tts_endpoint_voice_not_found() -> None:
             )
         
         assert response.status_code == 404
-        assert "voz-inexistente" in response.json()["detail"]
+        assert "voz-inexistente" in response.json()["detail"]["detail"]
     finally:
         app.dependency_overrides.clear()
 
@@ -110,7 +110,7 @@ async def test_tts_endpoint_unsupported_language() -> None:
             )
         
         assert response.status_code == 400
-        assert "xx" in response.json()["detail"]
+        assert "xx" in response.json()["detail"]["detail"]
     finally:
         app.dependency_overrides.clear()
 

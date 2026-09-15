@@ -233,3 +233,60 @@ async def test_close_no_engine() -> None:
     """Test de close cuando no hay engine client."""
     service = TtsService(engine_client=None)
     await service.close()  # Should not raise
+
+
+# --- Conversation + cloned voice tests ---
+
+
+@pytest.mark.asyncio
+async def test_conversation_with_cloned_voice() -> None:
+    """Test de conversación multi-voz con voz clonada."""
+    from omnivoice_api.services.conversation import ConversationService, ConversationTurn
+
+    mock_tts_service = AsyncMock()
+    mock_tts_service.synthesize_stock.return_value = AudioResult(
+        wav_bytes=b"synthesized-audio", duration_sec=1.0, sample_rate=22050,
+    )
+
+    convo_service = ConversationService(tts_service=mock_tts_service)
+
+    turns = [
+        ConversationTurn(voice_id="es-mx-male", text="Hola", language="es"),
+        ConversationTurn(voice_id="clone-uuid-1", text="Clon responde", language="es"),
+    ]
+    result = await convo_service.generate(turns=turns, pause_ms=200)
+
+    assert result.wav_bytes is not None
+    assert len(result.wav_bytes) > 0
+    # Both turns should go through tts_service.synthesize_stock
+    assert mock_tts_service.synthesize_stock.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_conversation_rejects_fewer_than_two_turns() -> None:
+    """Test de error cuando hay menos de 2 turnos."""
+    from omnivoice_api.services.conversation import ConversationService, ConversationTurn
+
+    tts_service = AsyncMock()
+    convo_service = ConversationService(tts_service=tts_service)
+
+    with pytest.raises(ValueError, match="al menos 2 turnos"):
+        await convo_service.generate(
+            turns=[ConversationTurn(voice_id="es-mx-male", text="Solo uno", language="es")],
+        )
+
+
+@pytest.mark.asyncio
+async def test_conversation_rejects_empty_text() -> None:
+    """Test de error cuando un turno tiene texto vacío."""
+    from omnivoice_api.services.conversation import ConversationService, ConversationTurn
+
+    tts_service = AsyncMock()
+    convo_service = ConversationService(tts_service=tts_service)
+
+    turns = [
+        ConversationTurn(voice_id="es-mx-male", text="", language="es"),
+        ConversationTurn(voice_id="es-mx-female", text="Hola", language="es"),
+    ]
+    with pytest.raises(ValueError, match="texto vacío"):
+        await convo_service.generate(turns=turns)

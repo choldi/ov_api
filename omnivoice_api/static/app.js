@@ -591,6 +591,26 @@ async function refreshTTSVoices() {
             opt.textContent = `${v.name} (${v.gender})`;
             sel.appendChild(opt);
         });
+        // Append cloned voices for the selected language
+        try {
+            state.clonedVoices = await API.listClonedVoices(lang);
+            state.clonedVoices.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.textContent = `${v.name} (cloned)`;
+                sel.appendChild(opt);
+            });
+        } catch (_) { /* cloned voices optional */ }
+        // Append designed voices for the selected language
+        try {
+            state.designedVoices = await API.listDesignedVoices(lang);
+            state.designedVoices.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.textContent = `${v.name} (designed)`;
+                sel.appendChild(opt);
+            });
+        } catch (_) { /* designed voices optional */ }
         updateTTSVoiceInfo();
     } catch (e) {
         toast('Failed to load voices: ' + e.message, 'error');
@@ -600,6 +620,8 @@ async function refreshTTSVoices() {
 function updateTTSVoiceInfo() {
     const id = $('#tts-voice').value;
     const voice = state.stockVoices.find(v => v.voice_id === id);
+    const cloned = (state.clonedVoices || []).find(v => v.id === id);
+    const designed = (state.designedVoices || []).find(v => v.id === id);
     const info = $('#tts-voice-info');
     if (voice) {
         info.innerHTML = `
@@ -607,6 +629,20 @@ function updateTTSVoiceInfo() {
                 <div><span class="text-zinc-500">ID:</span> <span class="font-mono text-brand-400">${voice.voice_id}</span></div>
                 <div><span class="text-zinc-500">Language:</span> ${voice.language}</div>
                 <div><span class="text-zinc-500">Gender:</span> ${voice.gender}</div>
+            </div>`;
+    } else if (cloned) {
+        info.innerHTML = `
+            <div class="space-y-1">
+                <div><span class="text-zinc-500">ID:</span> <span class="font-mono text-brand-400">${cloned.id}</span></div>
+                <div><span class="text-zinc-500">Language:</span> ${cloned.language}</div>
+                <div><span class="text-zinc-500">Type:</span> Cloned voice</div>
+            </div>`;
+    } else if (designed) {
+        info.innerHTML = `
+            <div class="space-y-1">
+                <div><span class="text-zinc-500">ID:</span> <span class="font-mono text-brand-400">${designed.id}</span></div>
+                <div><span class="text-zinc-500">Language:</span> ${designed.language}</div>
+                <div><span class="text-zinc-500">Instruct:</span> ${designed.instruct}</div>
             </div>`;
     } else {
         info.textContent = 'Select a voice';
@@ -922,12 +958,27 @@ function addConvoTurn() {
     `;
     container.appendChild(turn);
 
-    // Populate voices
+    // Populate voices (stock + cloned + designed)
     const sel = turn.querySelector('.convo-voice');
     state.stockVoices.forEach(v => {
         const opt = document.createElement('option');
         opt.value = v.voice_id;
-        opt.textContent = `${v.name}`;
+        opt.dataset.lang = v.language;
+        opt.textContent = v.name;
+        sel.appendChild(opt);
+    });
+    (state.clonedVoices || []).forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.dataset.lang = v.language;
+        opt.textContent = `${v.name} (cloned)`;
+        sel.appendChild(opt);
+    });
+    (state.designedVoices || []).forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.dataset.lang = v.language;
+        opt.textContent = `${v.name} (designed)`;
         sel.appendChild(opt);
     });
 
@@ -943,10 +994,12 @@ function addConvoTurn() {
 async function doConvoGenerate() {
     const turns = [];
     for (const el of $('#convo-turns').children) {
-        const voiceId = el.querySelector('.convo-voice').value;
+        const voiceSel = el.querySelector('.convo-voice');
+        const voiceId = voiceSel.value;
         const text = el.querySelector('.convo-text').value.trim();
         if (!text) { toast('All turns must have text', 'error'); return; }
-        turns.push({ voice_id: voiceId, text });
+        const lang = voiceSel.selectedOptions[0]?.dataset.lang || 'es';
+        turns.push({ voice_id: voiceId, text, language: lang });
     }
     if (turns.length < 2) { toast('Minimum 2 turns', 'error'); return; }
 

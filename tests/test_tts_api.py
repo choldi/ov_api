@@ -207,3 +207,28 @@ async def test_tts_designed_voice_via_stock_endpoint(async_client: AsyncClient) 
         assert resp.headers["content-type"] == "audio/wav"
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_tts_cloned_voice_via_stock_endpoint(async_client: AsyncClient) -> None:
+    """Test that a cloned voice_id works through the /tts stock endpoint."""
+    mock_service = AsyncMock()
+    mock_service.synthesize_stock.return_value = AudioResult(
+        wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+    )
+
+    app.dependency_overrides[get_tts_service] = lambda: mock_service
+    try:
+        resp = await async_client.post(
+            "/api/v1/tts",
+            json={"text": "Hola voz clonada", "voice_id": "clone-uuid-abc", "language": "es"},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/wav"
+        # Verify the service was called with the cloned voice_id
+        mock_service.synthesize_stock.assert_called_once()
+        call_kwargs = mock_service.synthesize_stock.call_args.kwargs
+        assert call_kwargs["voice_id"] == "clone-uuid-abc"
+        assert call_kwargs["language"] == "es"
+    finally:
+        app.dependency_overrides.clear()
