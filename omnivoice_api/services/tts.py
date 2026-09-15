@@ -36,6 +36,8 @@ class TtsService:
         if self._voice_service is None:
             self._voice_service = VoiceService()
             await self._voice_service.initialize()
+        elif not getattr(self._voice_service, '_initialized', False):
+            await self._voice_service.initialize()
         return self._voice_service
 
     async def synthesize_stock(

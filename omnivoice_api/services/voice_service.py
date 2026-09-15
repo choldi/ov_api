@@ -36,18 +36,21 @@ class VoiceService:
         self._repository = repository
         self._audio_validator = audio_validator
         self._embedding_cache = embedding_cache
+        self._initialized = repository is not None
 
     async def initialize(self) -> None:
         """Initialize the service and its dependencies."""
         if self._repository is None:
             self._repository = VoiceRepository()
             await self._repository.initialize()
-        
+
         if self._audio_validator is None:
             self._audio_validator = AudioValidator()
-        
+
         if self._embedding_cache is None:
             self._embedding_cache = get_embedding_cache()
+
+        self._initialized = True
 
     async def clone_voice(
         self,

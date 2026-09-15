@@ -38,6 +38,7 @@ async def get_tts_service() -> TtsService:
     """Dependency para obtener el servicio TTS."""
     engine_client = OmniVoiceEngineClient()
     voice_service = VoiceService()
+    await voice_service.initialize()
     service = TtsService(engine_client=engine_client, voice_service=voice_service)
     try:
         yield service
