@@ -112,6 +112,15 @@ def _map_language(language: str | None) -> str | None:
     return _LANGUAGE_MAP.get(language.lower(), language)
 
 
+def _estimate_duration(text: str, speed: float = 1.0) -> float:
+    """Estimate required audio duration from text length.
+
+    The OmniVoice model truncates output when no duration is set.
+    ~0.08s per character at speed=1.0, with a 3s minimum.
+    """
+    return max(3.0, len(text) * 0.08 / max(speed, 0.5))
+
+
 def _apply_emotion(text: str, emotion: str | None) -> str:
     """Aplica un tag de emoción como prefijo al texto.
 
@@ -486,6 +495,10 @@ class OmniVoiceEngine:
         instruct = self._get_instruct_for_voice(voice_id)
         params = generation_params or GenerationParams()
 
+        # Auto-estimate duration if not explicitly set — prevents text truncation
+        if params.duration is None:
+            params.duration = _estimate_duration(text, speed)
+
         try:
             kwargs = params.to_kwargs()
             kwargs["text"] = _apply_emotion(text, emotion)
@@ -526,6 +539,10 @@ class OmniVoiceEngine:
             )
 
         params = generation_params or GenerationParams()
+
+        # Auto-estimate duration if not explicitly set — prevents text truncation
+        if params.duration is None:
+            params.duration = _estimate_duration(text, speed)
 
         try:
             kwargs = params.to_kwargs()
@@ -571,6 +588,10 @@ class OmniVoiceEngine:
             )
 
         params = generation_params or GenerationParams()
+
+        # Auto-estimate duration if not explicitly set — prevents text truncation
+        if params.duration is None:
+            params.duration = _estimate_duration(text, speed)
 
         try:
             kwargs = params.to_kwargs()
