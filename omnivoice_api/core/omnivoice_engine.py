@@ -159,7 +159,7 @@ class GenerationParams:
     denoise: bool = True
     guidance_scale: float = 2.0
     duration: float | None = None
-    preprocess_prompt: bool = True
+    preprocess_prompt: bool = False
     postprocess_output: bool = True
     pad_duration: float = 0.1
     fade_duration: float = 0.1

@@ -667,6 +667,7 @@ async function doTTSSynthesize() {
             denoise: $('#tts-denoise').checked,
             guidance_scale: parseFloat($('#tts-guidance').value) || 2.0,
             postprocess_output: $('#tts-postprocess').checked,
+            preprocess_prompt: $('#tts-preprocess').checked,
         };
         if (state.selectedEmotion.tts) params.emotion = state.selectedEmotion.tts;
         const dur = parseFloat($('#tts-duration').value);
