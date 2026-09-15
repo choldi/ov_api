@@ -42,11 +42,12 @@ const API = {
         return res.blob();
     },
 
-    async cloneVoice(name, language, audioFile) {
+    async cloneVoice(name, language, audioFile, refText) {
         const fd = new FormData();
         fd.append('name', name);
         fd.append('language', language);
         fd.append('reference_audio', audioFile);
+        if (refText) fd.append('ref_text', refText);
         const res = await this._fetch('/voices/clone', { method: 'POST', body: fd });
         return res.json();
     },
@@ -842,9 +843,10 @@ async function doCloneVoice() {
     const btn = $('#clone-submit');
     setLoading(btn, true);
     try {
-        const result = await API.cloneVoice(name, $('#clone-language').value, cloneFile);
+        const result = await API.cloneVoice(name, $('#clone-language').value, cloneFile, $('#clone-ref-text').value.trim() || null);
         toast(`Voice "${name}" cloned! ID: ${result.voice_id}`, 'success');
         $('#clone-name').value = '';
+        $('#clone-ref-text').value = '';
         cloneFile = null;
         $('#clone-audio-preview').classList.add('hidden');
         btn.disabled = true;
