@@ -40,13 +40,14 @@ echo "2. Using voice: ${VOICE_NAME} (id=${VOICE_ID})"
 echo "   Language: ${LANG}"
 echo "   Text: \"${TEXT}\""
 
-# 3. Synthesize
+# 3. Synthesize (estimate duration: ~0.08s per char at speed 1.0, min 3s)
+DURATION=$(python3 -c "print(max(3.0, int(len('${TEXT}') * 0.08 / 1.0) + 2))")
 echo ""
-echo "3. Synthesizing..."
+echo "3. Synthesizing (duration=${DURATION}s)..."
 HTTP_CODE=$(curl -sf -o "${OUTPUT}" -w "%{http_code}" \
     -X POST "${BASE_URL}/api/v1/tts" \
     -H "Content-Type: application/json" \
-    -d "{\"text\":\"${TEXT}\", \"voice_id\":\"${VOICE_ID}\", \"language\":\"${LANG}\"}")
+    -d "{\"text\":\"${TEXT}\", \"voice_id\":\"${VOICE_ID}\", \"language\":\"${LANG}\", \"duration\":${DURATION}}")
 
 if [ "$HTTP_CODE" -ne 200 ]; then
     echo "   ERROR: HTTP ${HTTP_CODE}"
