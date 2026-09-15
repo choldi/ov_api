@@ -133,23 +133,26 @@ class VoiceService:
 
     async def delete_voice(self, voice_id: str) -> bool:
         """Delete a cloned voice."""
-        # Get voice info first to delete file
+        # Get voice info first to delete file and invalidate cache
+        ref_path = None
         try:
             voice = await self._repository.get_by_id(voice_id)
             ref_path = Path(voice["reference_path"])
             if ref_path.exists():
-                # Delete the voice directory
                 shutil.rmtree(ref_path.parent, ignore_errors=True)
         except VoiceNotFoundError:
             pass
-        
+
         # Delete from repository
         deleted = await self._repository.delete(voice_id)
-        
-        # Invalidate cache
-        if deleted:
-            self._embedding_cache.invalidate(voice_id)
-        
+
+        # Invalidate cache using the reference audio path
+        if deleted and ref_path is not None:
+            try:
+                self._embedding_cache.invalidate(ref_path)
+            except Exception:
+                pass
+
         return deleted
 
     async def voice_exists(self, voice_id: str) -> bool:
