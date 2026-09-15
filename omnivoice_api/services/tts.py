@@ -69,8 +69,9 @@ class TtsService:
             )
         except VoiceNotFoundError:
             pass
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Cloned voice synthesis failed: %s", e)
 
         # 2. Try designed voice (instruct preset from DB)
         try:
@@ -87,8 +88,9 @@ class TtsService:
             )
         except VoiceNotFoundError:
             pass
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Designed voice synthesis failed: %s", e)
 
         # 3. Fall back to stock voices (hardcoded)
         engine = await self._get_engine_client()
