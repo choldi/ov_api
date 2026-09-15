@@ -593,6 +593,13 @@ class OmniVoiceEngine:
         if params.duration is None:
             params.duration = _estimate_duration(text, speed)
 
+        # Clone-specific tuning: smoother fade-in to suppress initial artifact,
+        # higher steps for better voice fidelity
+        if params.fade_duration < 0.3:
+            params.fade_duration = 0.3
+        if params.num_step < 48:
+            params.num_step = 48
+
         try:
             kwargs = params.to_kwargs()
             kwargs["text"] = _apply_emotion(text, emotion)
