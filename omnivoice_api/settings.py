@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     API_KEY: str = ""
     CORS_ORIGINS: str = "*"
     MAX_UPLOAD_SIZE_MB: int = 10
+    MAX_REFERENCE_DURATION_SEC: float = 30.0
 
     # --- Observability ---
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
