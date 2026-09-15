@@ -151,9 +151,12 @@ async def test_synthesize_stock_designed_voice_not_found_falls_to_stock() -> Non
 
 
 @pytest.mark.asyncio
-async def test_synthesize_clone_language_mismatch() -> None:
-    """Test de error cuando el idioma no coincide con la voz clonada."""
+async def test_synthesize_clone_uses_voice_language() -> None:
+    """Test that synthesize_clone uses the voice's own language from DB."""
     mock_engine = AsyncMock()
+    mock_engine.synthesize_clone.return_value = AudioResult(
+        wav_bytes=b"cloned-wav", duration_sec=2.0, sample_rate=22050,
+    )
 
     mock_voice_service = AsyncMock()
     mock_voice_service.get_voice.return_value = {
@@ -163,12 +166,22 @@ async def test_synthesize_clone_language_mismatch() -> None:
     }
 
     service = TtsService(engine_client=mock_engine, voice_service=mock_voice_service)
-    with pytest.raises(UnsupportedLanguageError):
-        await service.synthesize_clone(
-            text="Hello",
-            voice_id="clone-id",
-            language="en",
-        )
+    # API sends language="en" but voice is "es" — should use voice's language
+    result = await service.synthesize_clone(
+        text="Hola",
+        voice_id="clone-id",
+        language="en",
+    )
+    assert result.wav_bytes == b"cloned-wav"
+    mock_engine.synthesize_clone.assert_called_once_with(
+        text="Hola",
+        reference_audio_path="/path/to/ref.wav",
+        instruct=None,
+        speed=1.0,
+        emotion=None,
+        generation_params=None,
+        language="es",  # uses voice's language, not API parameter
+    )
 
 
 @pytest.mark.asyncio

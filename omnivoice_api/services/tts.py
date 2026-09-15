@@ -157,8 +157,10 @@ class TtsService:
         voice_data = await voice_service.get_voice(voice_id)
         reference_audio_path = voice_data["reference_path"]
 
-        if voice_data["language"] != language:
-            raise UnsupportedLanguageError(language, [voice_data["language"]])
+        # Use the voice's own language from the DB, not the API parameter.
+        # The cloned voice was recorded in a specific language — the model
+        # needs that language to produce correct output.
+        voice_language = voice_data["language"]
 
         engine = await self._get_engine_client()
 
@@ -169,7 +171,7 @@ class TtsService:
             speed=speed,
             emotion=emotion,
             generation_params=generation_params,
-            language=language,
+            language=voice_language,
         )
 
     async def close(self) -> None:
