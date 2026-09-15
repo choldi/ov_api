@@ -176,6 +176,7 @@ async def test_synthesize_clone_uses_voice_language() -> None:
     mock_engine.synthesize_clone.assert_called_once_with(
         text="Hola",
         reference_audio_path="/path/to/ref.wav",
+        ref_text=None,
         instruct=None,
         speed=1.0,
         emotion=None,
@@ -209,6 +210,7 @@ async def test_synthesize_clone_success() -> None:
     mock_engine.synthesize_clone.assert_called_once_with(
         text="Hola",
         reference_audio_path="/path/to/ref.wav",
+        ref_text=None,
         instruct=None,
         speed=1.0,
         emotion=None,

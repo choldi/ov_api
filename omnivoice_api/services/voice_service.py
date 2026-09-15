@@ -57,6 +57,7 @@ class VoiceService:
         name: str,
         language: str,
         reference_audio_path: Path | str,
+        ref_text: str | None = None,
     ) -> str:
         """Clone a voice from reference audio.
         
@@ -98,13 +99,17 @@ class VoiceService:
         
         shutil.copy2(validated_path, dest_path)
         
+        metadata = {"original_path": str(reference_audio_path)}
+        if ref_text:
+            metadata["ref_text"] = ref_text
+
         # Store in repository
         voice_id = await self._repository.create(
             name=name,
             language=language,
             reference_path=str(dest_path),
             duration_sec=duration_sec,
-            metadata={"original_path": str(reference_audio_path)},
+            metadata=metadata,
         )
         
         # Pre-compute and cache embedding

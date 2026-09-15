@@ -162,11 +162,15 @@ class TtsService:
         # needs that language to produce correct output.
         voice_language = voice_data["language"]
 
+        # Retrieve ref_text (pre-computed transcription) from metadata
+        ref_text = voice_data.get("metadata", {}).get("ref_text")
+
         engine = await self._get_engine_client()
 
         return await engine.synthesize_clone(
             text=text,
             reference_audio_path=reference_audio_path,
+            ref_text=ref_text,
             instruct=instruct,
             speed=speed,
             emotion=emotion,

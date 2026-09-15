@@ -74,6 +74,7 @@ async def clone_voice(
     name: str = Form(..., description="Nombre único para la voz clonada"),
     language: str = Form(..., description="Idioma del audio de referencia (ISO 639-1)"),
     reference_audio: UploadFile = File(..., description="Archivo de audio de referencia (WAV, FLAC)"),
+    ref_text: str | None = Form(None, description="Transcripción del audio de referencia (mejora calidad del clonado)"),
     voice_service: VoiceService = Depends(get_voice_service),
 ) -> dict:
     # Validate file type
@@ -96,6 +97,7 @@ async def clone_voice(
             name=name,
             language=language,
             reference_audio_path=tmp_file_path,
+            ref_text=ref_text,
         )
         
         return {

@@ -317,6 +317,7 @@ class OmniVoiceEngineClient:
         *,
         text: str,
         reference_audio_path: str,
+        ref_text: str | None = None,
         instruct: str | None = None,
         speed: float = 1.0,
         emotion: str | None = None,
@@ -336,6 +337,7 @@ class OmniVoiceEngineClient:
             wav_bytes = await self._engine.synthesize_clone(
                 text=text,
                 reference_audio_path=reference_audio_path,
+                ref_text=ref_text,
                 instruct=instruct,
                 speed=speed,
                 emotion=emotion,

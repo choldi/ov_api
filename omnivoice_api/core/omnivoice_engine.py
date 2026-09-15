@@ -548,6 +548,7 @@ class OmniVoiceEngine:
         *,
         text: str,
         reference_audio_path: str,
+        ref_text: str | None = None,
         instruct: str | None = None,
         speed: float = 1.0,
         emotion: str | None = None,
@@ -575,6 +576,8 @@ class OmniVoiceEngine:
             kwargs = params.to_kwargs()
             kwargs["text"] = _apply_emotion(text, emotion)
             kwargs["ref_audio"] = reference_audio_path
+            if ref_text:
+                kwargs["ref_text"] = ref_text
             kwargs["speed"] = speed
             lang = _map_language(language)
             if lang:
