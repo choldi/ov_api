@@ -1,7 +1,11 @@
-# Makefile para OmniVoice API - Compatible con Windows y Unix
-# Uso: make <target>
+# Makefile para TTS API (multi-engine) - Compatible con Windows y Unix
+# Uso: make <target> ENGINE=<engine>
+# Engines: omnivoice (default), pocket_tts, edgetts, mock
 
-.PHONY: help install test lint format run dev clean check-gpu check-omnivoice-install download-model pre-commit test-unit test-integration test-load check-uv
+.PHONY: help install install-base install-omnivoice install-pocket_tts install-edgetts install-all test lint format run dev clean check-gpu check-omnivoice-install download-model pre-commit test-unit test-integration test-load check-uv
+
+# Engine selection (override with: make install ENGINE=pocket_tts)
+ENGINE ?= omnivoice
 
 # Detectar sistema operativo
 ifeq ($(OS),Windows_NT)
@@ -49,15 +53,23 @@ endif
 
 # Default target
 help:
-	@echo "OmniVoice API - Comandos disponibles:"
+	@echo "TTS API (multi-engine) - Comandos disponibles:"
 	@echo ""
-	@echo "  make install              - Instala dependencias en entorno virtual"
+	@echo "  Engine selection: make install ENGINE=<engine>"
+	@echo "    Engines: omnivoice (default), pocket_tts, edgetts, mock"
+	@echo ""
+	@echo "  make install              - Instala dependencias + engine $(ENGINE)"
+	@echo "  make install-base         - Solo dependencias base (sin engine)"
+	@echo "  make install-omnivoice    - Instala OmniVoice (GPU)"
+	@echo "  make install-pocket_tts   - Instala Pocket TTS (CPU, voice cloning)"
+	@echo "  make install-edgetts      - Instala EdgeTTS (cloud)"
+	@echo "  make install-all          - Instala todos los engines"
 	@echo "  make test                 - Ejecuta tests con cobertura"
 	@echo "  make test-unit            - Ejecuta solo tests unitarios"
 	@echo "  make test-integration     - Ejecuta tests de integración"
 	@echo "  make test-load            - Ejecuta tests de carga"
 	@echo "  make lint                 - Ejecuta ruff y mypy"
-	@echo "  make format               - Formatea código con ruff y black"
+	@echo "  make format               - Formatea código con ruff"
 	@echo "  make run                  - Inicia servidor en producción"
 	@echo "  make dev                  - Inicia servidor en modo desarrollo (reload)"
 	@echo "  make check-gpu            - Verifica disponibilidad de GPU/CUDA"
@@ -67,19 +79,49 @@ help:
 	@echo "  make pre-commit           - Instala y ejecuta pre-commit hooks"
 	@echo ""
 
-# Instalación - siempre ejecuta los comandos (phony)
-install: check-uv
+# --- Instalación ---
+
+# Base dependencies only (no engine)
+install-base: check-uv
 	@echo "Creando entorno virtual en $(VENV)..."
 	$(PYTHON) -m venv $(VENV)
 	@echo "Actualizando pip..."
 	$(PYTHON) -m pip install --upgrade pip
-	@echo "Instalando dependencias del proyecto con uv (torch 2.5.1+cu124)..."
+	@echo "Instalando dependencias del proyecto con uv..."
 	uv sync --dev --project .
-	@echo "Instalando OmniVoice desde git..."
+	@echo "Dependencias base instaladas en $(VENV)"
+
+# Install base + selected engine
+install: install-base install-$(ENGINE)
+	@echo "Instalación completa: engine=$(ENGINE)"
+
+# Engine-specific install targets
+install-omnivoice:
+	@echo "Instalando OmniVoice (GPU, torch+cu124)..."
+	uv pip install "torch==2.5.1" "torchaudio==2.5.1" --python $(PYTHON_VENV) --index-url https://download.pytorch.org/whl/cu124
 	uv pip install git+https://github.com/k2-fsa/OmniVoice.git --python $(PYTHON_VENV)
 	@echo "Descargando modelo OmniVoice (ModelsLab/omnivoice-singing)..."
 	$(PYTHON_VENV) scripts/download_model.py
-	@echo "Entorno virtual creado y dependencias instaladas en $(VENV)"
+	@echo "OmniVoice instalado"
+
+install-pocket_tts:
+	@echo "Instalando Pocket TTS (CPU, voice cloning)..."
+	uv pip install "pocket-tts" --python $(PYTHON_VENV)
+	@echo "Pocket TTS instalado"
+
+install-edgetts:
+	@echo "Instalando EdgeTTS (cloud)..."
+	uv pip install "edge-tts" --python $(PYTHON_VENV)
+	@echo "EdgeTTS instalado"
+
+# Install all engines
+install-all: install-base
+	@echo "Instalando todos los engines..."
+	uv pip install "pocket-tts" "edge-tts" --python $(PYTHON_VENV)
+	uv pip install "torch==2.5.1" "torchaudio==2.5.1" --python $(PYTHON_VENV) --index-url https://download.pytorch.org/whl/cu124
+	uv pip install git+https://github.com/k2-fsa/OmniVoice.git --python $(PYTHON_VENV)
+	$(PYTHON_VENV) scripts/download_model.py
+	@echo "Todos los engines instalados"
 
 # Verifica que uv está disponible. Si no, intenta instalarlo.
 ifeq ($(OS),Windows_NT)
@@ -133,19 +175,17 @@ format: install
 	$(RUFF) format .
 	$(RUFF) check --fix .
 
-# Servidor
+# Servidor (engine se configura via TTS_ENGINE env var)
 run: install
-	$(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000
+	TTS_ENGINE=$(ENGINE) $(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000
 
 dev: install
-	$(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000 --reload
+	TTS_ENGINE=$(ENGINE) $(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Utilidades
 check-gpu: install
 	@$(PYTHON_VENV) -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}'); print(f'GPU count: {torch.cuda.device_count()}'); [print(f'  GPU {i}: {torch.cuda.get_device_name(i)}') for i in range(torch.cuda.device_count())]"
 
-# Verificación de la instalación externa de OmniVoice.
-# El script Python ya carga .env internamente, no necesitamos source aquí.
 check-omnivoice-install: install
 	@echo "Verificando instalación externa de OmniVoice..."
 	@$(PYTHON_VENV) scripts/check_omnivoice_install.py

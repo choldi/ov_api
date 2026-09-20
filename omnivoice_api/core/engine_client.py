@@ -1,27 +1,17 @@
-"""Cliente para interactuar con el motor OmniVoice."""
+"""Cliente de alto nivel para cualquier motor TTS."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional
 
 import structlog
 
-from omnivoice_api.core.omnivoice_engine import (
-    OmniVoiceEngine,
-    GenerationParams,
-    get_engine,
-    close_engine,
-)
+from omnivoice_api.core.engine_base import TtsEngineBase
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
-    UnsupportedLanguageError,
-    UnsupportedInstructError,
-    VoiceNotFoundError,
 )
 
 logger = structlog.get_logger(__name__)
@@ -156,33 +146,39 @@ def _validate_wav_audio(wav_bytes: bytes) -> dict:
 
 
 class OmniVoiceEngineClient:
-    """Cliente de alto nivel para el motor OmniVoice usado por los servicios."""
+    """Cliente de alto nivel para cualquier motor TTS (engine-agnostic)."""
 
-    def __init__(self) -> None:
-        self._engine: OmniVoiceEngine | None = None
+    def __init__(self, engine: TtsEngineBase | None = None) -> None:
+        self._engine: TtsEngineBase | None = engine
         self._started = False
 
     async def start(self) -> None:
         """Inicializa el cliente y el motor subyacente."""
         if not self._started:
             logger.info("engine_client_starting")
-            self._engine = await get_engine()
+            if self._engine is None:
+                from omnivoice_api.core.engine_factory import create_engine
+                self._engine = create_engine()
+            await self._engine.initialize()
             self._started = True
-            mode = "MOCK" if self._engine._use_mock else "REAL"
             logger.info(
                 "engine_client_started",
-                mode=mode,
-                device=self._engine._device,
+                engine=self._engine.name,
             )
 
     async def stop(self) -> None:
         """Detiene el cliente y libera recursos."""
         if self._started:
             logger.info("engine_client_stopping")
-            await close_engine()
+            if self._engine is not None:
+                await self._engine.close()
             self._engine = None
             self._started = False
             logger.info("engine_client_stopped")
+
+    @property
+    def engine(self) -> TtsEngineBase | None:
+        return self._engine
 
     async def health(self) -> EngineHealth:
         """Obtiene el estado de salud del motor."""
@@ -220,7 +216,6 @@ class OmniVoiceEngineClient:
         voice_id: str,
         speed: float = 1.0,
         emotion: str | None = None,
-        generation_params: GenerationParams | None = None,
         language: str | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz stock."""
@@ -233,13 +228,12 @@ class OmniVoiceEngineClient:
         start_time = time.perf_counter()
 
         try:
-            wav_bytes = await self._engine.synthesize_stock(
+            wav_bytes = await self._engine.synthesize(
                 text=text,
                 voice_id=voice_id,
+                language=language or "es",
                 speed=speed,
                 emotion=emotion,
-                generation_params=generation_params,
-                language=language,
             )
         except Exception as e:
             elapsed = time.perf_counter() - start_time
@@ -270,7 +264,6 @@ class OmniVoiceEngineClient:
         instruct: str,
         speed: float = 1.0,
         emotion: str | None = None,
-        generation_params: GenerationParams | None = None,
         language: str | None = None,
     ) -> AudioResult:
         """Sintetiza texto con instruct personalizado (voice design libre)."""
@@ -286,10 +279,9 @@ class OmniVoiceEngineClient:
             wav_bytes = await self._engine.synthesize_instruct(
                 text=text,
                 instruct=instruct,
+                language=language or "es",
                 speed=speed,
                 emotion=emotion,
-                generation_params=generation_params,
-                language=language,
             )
         except Exception as e:
             elapsed = time.perf_counter() - start_time
@@ -318,13 +310,10 @@ class OmniVoiceEngineClient:
         text: str,
         reference_audio_path: str,
         ref_text: str | None = None,
-        instruct: str | None = None,
         speed: float = 1.0,
-        emotion: str | None = None,
-        generation_params: GenerationParams | None = None,
         language: str | None = None,
     ) -> AudioResult:
-        """Sintetiza texto con voz clonada, opcionalmente con instruct."""
+        """Sintetiza texto con voz clonada."""
         if not self._started:
             await self.start()
         assert self._engine is not None
@@ -337,12 +326,9 @@ class OmniVoiceEngineClient:
             wav_bytes = await self._engine.synthesize_clone(
                 text=text,
                 reference_audio_path=reference_audio_path,
-                ref_text=ref_text,
-                instruct=instruct,
+                language=language or "es",
                 speed=speed,
-                emotion=emotion,
-                generation_params=generation_params,
-                language=language,
+                ref_text=ref_text,
             )
         except Exception as e:
             elapsed = time.perf_counter() - start_time

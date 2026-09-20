@@ -19,7 +19,27 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_PREFIX: str = "/api/v1"
 
-    # --- OmniVoice Engine ---
+    # --- TTS Engine Selection ---
+    # omnivoice: GPU-based, full features (stock, clone, instruct, emotions)
+    # pocket_tts: CPU-first, voice cloning, es/en/fr (no Catalan)
+    # edgetts: cloud, no cloning, 400+ voices including Catalan (ca-ES)
+    # mock: test tones (for development/testing)
+    # routed: multi-engine, dispatches by language (requires TTS_ENGINES config)
+    TTS_ENGINE: Literal["omnivoice", "pocket_tts", "edgetts", "mock", "routed"] = "omnivoice"
+
+    # Multi-engine routing (when TTS_ENGINE=routed)
+    # JSON dict mapping language codes to engine names.
+    # Use "_default" for fallback when language has no explicit mapping.
+    # Example: {"es":"pocket_tts","en":"pocket_tts","ca":"edgetts","_default":"pocket_tts"}
+    TTS_ENGINES: str = ""
+
+    # Pocket TTS config (when TTS_ENGINE=pocket_tts)
+    POCKET_TTS_MODEL: str = "kyutai/pocket-tts-100m-en"
+
+    # EdgeTTS config (when TTS_ENGINE=edgetts)
+    EDGETTS_VOICE_PREFIX: str = "es-MX"
+
+    # --- OmniVoice Engine (legacy, kept for backward compat) ---
     OMNIVOICE_MODEL_ID: str = "ModelsLab/omnivoice-singing"
     OMNIVOICE_DTYPE: Literal["float16", "float32", "int8"] = "float16"
     OMNIVOICE_WARMUP_ON_START: bool = False

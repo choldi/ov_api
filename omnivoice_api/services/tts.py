@@ -1,21 +1,18 @@
-"""Servicio de síntesis de texto a voz (TTS)."""
+"""Servicio de síntesis de texto a voz (TTS) — engine-agnostic."""
 
 from __future__ import annotations
 
 from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
-from omnivoice_api.core.omnivoice_engine import GenerationParams
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
-    UnsupportedLanguageError,
     VoiceNotFoundError,
 )
-from omnivoice_api.repositories.voice_repository import VoiceRepository
 from omnivoice_api.services.voice_service import VoiceService
 from omnivoice_api.settings import get_settings
 
 
 class TtsService:
-    """Servicio de síntesis de voz."""
+    """Servicio de síntesis de voz (funciona con cualquier engine)."""
 
     def __init__(
         self,
@@ -48,32 +45,30 @@ class TtsService:
         language: str,
         speed: float = 1.0,
         emotion: str | None = None,
-        generation_params: GenerationParams | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz stock, designed o clonada.
 
         Lookup order:
           1. Cloned voice (reference audio)
           2. Designed voice (instruct preset from DB)
-          3. Stock voice (hardcoded instruct mapping)
+          3. Stock voice (hardcoded mapping)
         """
         # 1. Try cloned voice
         try:
             voice_service = await self._get_voice_service()
-            voice_data = await voice_service.get_voice(voice_id)
+            await voice_service.get_voice(voice_id)
             return await self.synthesize_clone(
                 text=text,
                 voice_id=voice_id,
                 language=language,
                 speed=speed,
                 emotion=emotion,
-                generation_params=generation_params,
             )
         except VoiceNotFoundError:
             pass
         except Exception as e:
             import logging
-            logging.getLogger(__name__).warning("Cloned voice synthesis failed: %s", e)
+            logging.getLogger(__name__).warning("Cloned voice lookup failed: %s", e)
 
         # 2. Try designed voice (instruct preset from DB)
         try:
@@ -85,7 +80,6 @@ class TtsService:
                 instruct=designed["instruct"],
                 speed=speed,
                 emotion=emotion,
-                generation_params=generation_params,
                 language=language,
             )
         except VoiceNotFoundError:
@@ -94,7 +88,7 @@ class TtsService:
             import logging
             logging.getLogger(__name__).warning("Designed voice synthesis failed: %s", e)
 
-        # 3. Fall back to stock voices (hardcoded)
+        # 3. Fall back to stock voices
         engine = await self._get_engine_client()
 
         stock_voices = await engine.list_stock_voices(language)
@@ -104,15 +98,11 @@ class TtsService:
             err.valid_voice_ids = valid_ids
             raise err
 
-        if language not in self._settings.omnilang_list:
-            raise UnsupportedLanguageError(language, self._settings.omnilang_list)
-
         return await engine.synthesize_stock(
             text=text,
             voice_id=voice_id,
             speed=speed,
             emotion=emotion,
-            generation_params=generation_params,
             language=language,
         )
 
@@ -124,20 +114,14 @@ class TtsService:
         language: str,
         speed: float = 1.0,
         emotion: str | None = None,
-        generation_params: GenerationParams | None = None,
     ) -> AudioResult:
         """Sintetiza texto con instruct personalizado (voice design libre)."""
         engine = await self._get_engine_client()
-
-        if language not in self._settings.omnilang_list:
-            raise UnsupportedLanguageError(language, self._settings.omnilang_list)
-
         return await engine.synthesize_instruct(
             text=text,
             instruct=instruct,
             speed=speed,
             emotion=emotion,
-            generation_params=generation_params,
             language=language,
         )
 
@@ -148,9 +132,7 @@ class TtsService:
         voice_id: str,
         language: str,
         speed: float = 1.0,
-        instruct: str | None = None,
         emotion: str | None = None,
-        generation_params: GenerationParams | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz clonada."""
         voice_service = await self._get_voice_service()
@@ -158,8 +140,6 @@ class TtsService:
         reference_audio_path = voice_data["reference_path"]
 
         # Use the voice's own language from the DB, not the API parameter.
-        # The cloned voice was recorded in a specific language — the model
-        # needs that language to produce correct output.
         voice_language = voice_data["language"]
 
         # Retrieve ref_text (pre-computed transcription) from metadata
@@ -171,10 +151,7 @@ class TtsService:
             text=text,
             reference_audio_path=reference_audio_path,
             ref_text=ref_text,
-            instruct=instruct,
             speed=speed,
-            emotion=emotion,
-            generation_params=generation_params,
             language=voice_language,
         )
 

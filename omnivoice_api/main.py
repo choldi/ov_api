@@ -1,4 +1,4 @@
-"""Punto de entrada principal de OmniVoice API."""
+"""Punto de entrada principal de la API TTS multi-engine."""
 
 import asyncio
 import logging
@@ -42,15 +42,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from omnivoice_api.settings import get_settings
-from omnivoice_api.core.omnivoice_engine import get_engine, close_engine
 from omnivoice_api.core.cleanup import start_cleanup_task, stop_cleanup_task
 from omnivoice_api.middleware import RequestIDMiddleware, APIKeyMiddleware
 from omnivoice_api.api.v1 import voices, tts, conversations
-from omnivoice_api.core.omnivoice_engine import SUPPORTED_EMOTIONS
+
+# Global engine reference for lifespan
+_active_engine = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _active_engine
+
     try:
         current_loop = asyncio.get_running_loop()
         loop_class = type(current_loop).__name__
@@ -66,44 +69,46 @@ async def lifespan(app: FastAPI):
     except RuntimeError:
         pass
 
-    logger.info("Application startup: inicializando engine OmniVoice...")
+    settings = get_settings()
+    engine_name = settings.TTS_ENGINE
+    logger.info("Application startup: inicializando engine '%s'...", engine_name)
+
     try:
-        engine = await get_engine()
-        if engine._use_mock and engine._real_engine_error:
-            logger.warning(
-                "Engine en modo DEGRADADO (mock por fallback). Causa raíz: %s",
-                engine._real_engine_error,
-            )
-        else:
-            logger.info("Engine OmniVoice inicializado correctamente")
+        from omnivoice_api.core.engine_factory import create_engine
+        _active_engine = create_engine(engine_name)
+        await _active_engine.initialize()
+        logger.info("Engine '%s' inicializado correctamente", _active_engine.name)
     except Exception as e:
-        settings = get_settings()
-        if settings.OMNIVOICE_FALLBACK_TO_MOCK:
+        if engine_name == "omnivoice" and settings.OMNIVOICE_FALLBACK_TO_MOCK:
             logger.exception(
-                "Fallo inicializando engine, pero OMNIVOICE_FALLBACK_TO_MOCK=true: "
-                "la API arrancará en modo degradado. Error: %s",
+                "Fallo inicializando engine OmniVoice, pero OMNIVOICE_FALLBACK_TO_MOCK=true: "
+                "la API arrancará con mock. Error: %s",
                 e,
             )
+            from omnivoice_api.core.engines.mock_engine import MockEngine
+            _active_engine = MockEngine()
+            await _active_engine.initialize()
         else:
-            logger.exception("Fallo inicializando engine: %s", e)
+            logger.exception("Fallo inicializando engine '%s': %s", engine_name, e)
             raise
 
     # Iniciar cleanup task
-    settings = get_settings()
     start_cleanup_task(settings.OUTPUTS_DIR, ttl_seconds=settings.OUTPUT_TTL_SECONDS)
 
     yield
 
     # Shutdown
     stop_cleanup_task()
-    logger.info("Application shutdown: cerrando engine OmniVoice...")
-    await close_engine()
+    logger.info("Application shutdown: cerrando engine '%s'...", engine_name)
+    if _active_engine is not None:
+        await _active_engine.close()
+        _active_engine = None
 
 
 app = FastAPI(
-    title="OmniVoice API",
-    description="API REST para síntesis de voz multilingüe, clonado y conversaciones con OmniVoice (k2-fsa)",
-    version="0.1.0",
+    title="TTS API",
+    description="API REST multi-engine para síntesis de voz, clonado y conversaciones",
+    version="0.2.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -157,11 +162,13 @@ app.include_router(conversations.router, prefix="/api/v1")
 
 @app.get("/api/v1/emotions", tags=["tts"], summary="Listar emociones soportadas")
 async def list_emotions() -> list[dict]:
-    """Devuelve la lista de emociones soportadas por el modelo.
+    """Devuelve la lista de emociones soportadas por el engine activo.
 
-    Las emociones se aplican como tags de texto (prefijos) en el contenido sintetizado.
-    Ejemplo: ``[happy] ¡Qué alegría verte!``
+    Solo OmniVoice soporta emociones explícitas ([happy], [sad], etc.).
     """
+    if _active_engine is None or not _active_engine.capabilities.emotions:
+        return []
+
     descriptions = {
         "happy": "Tono alegre y contento",
         "sad": "Tono melancólico o triste",
@@ -172,6 +179,8 @@ async def list_emotions() -> list[dict]:
         "whisper": "Voz susurrada",
         "singing": "Estilo cantado / melódico",
     }
+    # OmniVoice-specific emotions
+    from omnivoice_api.core.omnivoice_engine import SUPPORTED_EMOTIONS
     return [
         {"id": e, "name": e.capitalize(), "description": descriptions.get(e, "")}
         for e in SUPPORTED_EMOTIONS
@@ -180,17 +189,30 @@ async def list_emotions() -> list[dict]:
 
 @app.get("/api/v1/health", tags=["Health"])
 async def health_check() -> JSONResponse:
-    engine = await get_engine()
-    health = await engine.health_check()
     settings = get_settings()
-    degraded = health.get("mode") == "MOCK" and health.get("real_engine_error")
+    if _active_engine is None:
+        return JSONResponse(
+            content={
+                "status": "not_initialized",
+                "version": settings.APP_VERSION,
+                "engine": settings.TTS_ENGINE,
+            },
+            status_code=503,
+        )
+
+    health = await _active_engine.health_check()
+    mode = health.get("mode", "UNKNOWN")
+    degraded = mode == "MOCK" or not health.get("model_loaded", False)
+
     return JSONResponse(
         content={
-            "status": "degraded" if degraded else ("ok" if health["model_loaded"] else "degraded"),
+            "status": "degraded" if degraded else "ok",
             "version": settings.APP_VERSION,
-            "device": health["device"],
-            "mode": health.get("mode", "UNKNOWN"),
-            "real_engine_error": health.get("real_engine_error"),
+            "engine": _active_engine.name,
+            "device": health.get("device", "unknown"),
+            "mode": mode,
+            "stock_voices_count": health.get("stock_voices_count", 0),
+            "gpu_available": health.get("gpu_available", False),
         }
     )
 
@@ -202,20 +224,29 @@ async def liveness() -> JSONResponse:
 
 @app.get("/api/v1/health/ready", tags=["Health"])
 async def readiness() -> JSONResponse:
-    engine = await get_engine()
-    health = await engine.health_check()
-    from omnivoice_api.core.engine_paths import default_install_dir
-    install_dir_exists = default_install_dir().exists()
-    venv_python_exists = get_settings().python_bin.exists()
-    ready = install_dir_exists and venv_python_exists and health["model_loaded"]
+    settings = get_settings()
+    if _active_engine is None:
+        return JSONResponse(
+            content={"status": "not_ready", "checks": {"engine_initialized": False}},
+            status_code=503,
+        )
+
+    health = await _active_engine.health_check()
+    ready = health.get("model_loaded", False)
+
+    checks = {"engine_initialized": ready, "engine": _active_engine.name}
+
+    # Only check OmniVoice-specific paths for omnivoice engine
+    if _active_engine.name == "omnivoice":
+        from omnivoice_api.core.engine_paths import default_install_dir
+        checks["install_dir_exists"] = default_install_dir().exists()
+        checks["venv_python_exists"] = settings.python_bin.exists()
+        ready = ready and checks["install_dir_exists"] and checks["venv_python_exists"]
+
     return JSONResponse(
         content={
             "status": "ready" if ready else "not_ready",
-            "checks": {
-                "install_dir_exists": install_dir_exists,
-                "venv_python_exists": venv_python_exists,
-                "model_loaded": health["model_loaded"],
-            }
+            "checks": checks,
         },
         status_code=200 if ready else 503,
     )
@@ -226,10 +257,12 @@ async def root():
     index = STATIC_DIR / "index.html"
     if index.exists():
         return FileResponse(str(index))
+    engine_name = _active_engine.name if _active_engine else "unknown"
     return JSONResponse(
         content={
-            "name": "OmniVoice API",
-            "version": "0.1.0",
+            "name": "TTS API",
+            "version": "0.2.0",
+            "engine": engine_name,
             "docs": "/docs",
             "health": "/api/v1/health",
         }

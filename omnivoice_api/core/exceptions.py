@@ -58,3 +58,15 @@ class InvalidReferenceAudioError(OmniVoiceAPIError):
     def __init__(self, detail: str) -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class FeatureNotSupportedError(OmniVoiceAPIError):
+    """Se lanza cuando se solicita una feature no soportada por el engine activo."""
+
+    def __init__(self, feature: str, engine: str) -> None:
+        self.feature = feature
+        self.engine = engine
+        super().__init__(
+            f"Feature '{feature}' no soportada por el engine '{engine}'. "
+            f"Cambia TTS_ENGINE o usa un engine que soporte esta feature."
+        )

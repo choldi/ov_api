@@ -1,4 +1,4 @@
-"""Router para síntesis de texto a voz (TTS)."""
+"""Router para síntesis de texto a voz (TTS) — engine-agnostic."""
 
 from __future__ import annotations
 
@@ -8,13 +8,9 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, stat
 from fastapi.responses import Response, StreamingResponse
 
 from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
-from omnivoice_api.core.omnivoice_engine import (
-    VALID_INSTRUCT_TOKENS_EN,
-    SUPPORTED_EMOTIONS,
-    GenerationParams,
-)
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
+    FeatureNotSupportedError,
     UnsupportedInstructError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
@@ -44,33 +40,6 @@ async def get_tts_service() -> TtsService:
         yield service
     finally:
         await service.close()
-
-
-def _build_generation_params(
-    num_step: int,
-    denoise: bool,
-    guidance_scale: float,
-    duration: float | None,
-    preprocess_prompt: bool,
-    postprocess_output: bool,
-    pad_duration: float,
-    fade_duration: float,
-    audio_chunk_duration: float,
-    audio_chunk_threshold: float,
-) -> GenerationParams:
-    """Construye GenerationParams desde los parámetros del endpoint."""
-    return GenerationParams(
-        num_step=num_step,
-        denoise=denoise,
-        guidance_scale=guidance_scale,
-        duration=duration,
-        preprocess_prompt=preprocess_prompt,
-        postprocess_output=postprocess_output,
-        pad_duration=pad_duration,
-        fade_duration=fade_duration,
-        audio_chunk_duration=audio_chunk_duration,
-        audio_chunk_threshold=audio_chunk_threshold,
-    )
 
 
 def _handle_tts_error(e: Exception) -> None:
@@ -107,6 +76,16 @@ def _handle_tts_error(e: Exception) -> None:
                 "valid_tokens": e.valid_items,
             },
         ) from e
+    if isinstance(e, FeatureNotSupportedError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "detail": str(e),
+                "error_type": "feature_not_supported",
+                "feature": e.feature,
+                "engine": e.engine,
+            },
+        ) from e
     if isinstance(e, EngineUnavailableError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -126,8 +105,8 @@ def _handle_tts_error(e: Exception) -> None:
     summary="Sintetizar texto a voz con voz stock",
     description=(
         "Genera audio WAV a partir de texto usando una voz predefinida (stock). "
-        "Soporta voces en múltiples idiomas con control de velocidad, emoción y parámetros de generación avanzados. "
-        "Opcionalmente puedes usar `instruct` para voice design libre sin necesidad de una voz clonada."
+        "Soporta voces en múltiples idiomas con control de velocidad. "
+        "Opcionalmente puedes usar `instruct` para voice design libre (solo OmniVoice engine)."
     ),
 )
 async def synthesize_tts(
@@ -135,41 +114,14 @@ async def synthesize_tts(
     voice_id: Annotated[str, Body(description="ID de la voz (ej: es-mx-male)")],
     language: Annotated[str, Body(description="Idioma del texto (ISO 639-1)")],
     speed: Annotated[float, Body(ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
-    instruct: Annotated[str | None, Body(description="Instruct personalizado (voice design libre)")] = None,
-    emotion: Annotated[str | None, Body(description="Emoción a aplicar al texto (tag como prefijo)")] = None,
-    # Generation params
-    num_step: Annotated[int, Body(ge=1, le=100, description="Pasos de unmasking (mayor = mejor calidad)")] = 32,
-    denoise: Annotated[bool, Body(description="Aplicar denoise para voz más limpia")] = True,
-    guidance_scale: Annotated[float, Body(ge=0.0, le=10.0, description="Classifier-free guidance")] = 2.0,
-    duration: Annotated[float | None, Body(ge=0.5, le=120.0, description="Duración fija en segundos (sobrescribe speed)")] = None,
-    preprocess_prompt: Annotated[bool, Body(description="Preprocesar audio de referencia")] = True,
-    postprocess_output: Annotated[bool, Body(description="Eliminar silencios largos del output")] = True,
-    pad_duration: Annotated[float, Body(ge=0.0, le=1.0, description="Silencio por lado (segundos)")] = 0.1,
-    fade_duration: Annotated[float, Body(ge=0.0, le=1.0, description="Duración fade-in/out (segundos)")] = 0.1,
-    audio_chunk_duration: Annotated[float, Body(ge=1.0, le=60.0, description="Duración target por chunk (segundos)")] = 15.0,
-    audio_chunk_threshold: Annotated[float, Body(ge=5.0, le=120.0, description="Umbral para activar chunking (segundos)")] = 30.0,
-    stream: Annotated[bool, Query(description="Streaming por chunks (SSE-style)")] = False,
+    instruct: Annotated[str | None, Body(description="Instruct personalizado (voice design libre, solo OmniVoice)")] = None,
+    emotion: Annotated[str | None, Body(description="Emoción (solo engines que la soporten)")] = None,
+    stream: Annotated[bool, Query(description="Streaming por chunks")] = False,
     accept: Annotated[str | None, Header(description="Tipo de contenido esperado")] = None,
     tts_service: TtsService = Depends(get_tts_service),
 ) -> Response:
-    """Sintetiza texto a voz con voz stock o clonada."""
-    if emotion and emotion.lower() not in SUPPORTED_EMOTIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "detail": f"Emoción no soportada: {emotion}",
-                "error_type": "unsupported_emotion",
-                "emotion": emotion,
-                "supported_emotions": SUPPORTED_EMOTIONS,
-            },
-        )
+    """Sintetiza texto a voz con voz stock, clonada o instruct."""
     try:
-        gen_params = _build_generation_params(
-            num_step, denoise, guidance_scale, duration,
-            preprocess_prompt, postprocess_output, pad_duration, fade_duration,
-            audio_chunk_duration, audio_chunk_threshold,
-        )
-
         pool = get_engine_pool()
         await pool.acquire()
         try:
@@ -180,7 +132,6 @@ async def synthesize_tts(
                     language=language,
                     speed=speed,
                     emotion=emotion,
-                    generation_params=gen_params,
                 )
             else:
                 result = await tts_service.synthesize_stock(
@@ -189,11 +140,11 @@ async def synthesize_tts(
                     language=language,
                     speed=speed,
                     emotion=emotion,
-                    generation_params=gen_params,
                 )
         finally:
             pool.release()
-    except (VoiceNotFoundError, UnsupportedLanguageError, UnsupportedInstructError, EngineUnavailableError) as e:
+    except (VoiceNotFoundError, UnsupportedLanguageError, UnsupportedInstructError,
+            EngineUnavailableError, FeatureNotSupportedError) as e:
         _handle_tts_error(e)
     except Exception as e:
         _handle_tts_error(e)
@@ -215,8 +166,7 @@ async def synthesize_tts(
     summary="Sintetizar texto con instruct personalizado",
     description=(
         "Voice design libre: especifica atributos del hablante directamente mediante un instruct "
-        "(ej: 'female, young adult, british accent'). No requiere una voz clonada. "
-        "Útil para generar voces personalizadas sobre la marcha."
+        "(ej: 'female, young adult, british accent'). Solo soportado por el engine OmniVoice."
     ),
 )
 async def synthesize_instruct(
@@ -224,39 +174,13 @@ async def synthesize_instruct(
     instruct: Annotated[str, Body(description="Instruct de voice design (ej: 'female, young adult, british accent')")],
     language: Annotated[str, Body(description="Idioma del texto (ISO 639-1)")],
     speed: Annotated[float, Body(ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
-    emotion: Annotated[str | None, Body(description="Emoción a aplicar al texto (tag como prefijo)")] = None,
-    # Generation params
-    num_step: Annotated[int, Body(ge=1, le=100, description="Pasos de unmasking")] = 32,
-    denoise: Annotated[bool, Body(description="Aplicar denoise")] = True,
-    guidance_scale: Annotated[float, Body(ge=0.0, le=10.0, description="Classifier-free guidance")] = 2.0,
-    duration: Annotated[float | None, Body(ge=0.5, le=120.0, description="Duración fija (sobrescribe speed)")] = None,
-    preprocess_prompt: Annotated[bool, Body(description="Preprocesar audio de referencia")] = True,
-    postprocess_output: Annotated[bool, Body(description="Eliminar silencios del output")] = True,
-    pad_duration: Annotated[float, Body(ge=0.0, le=1.0, description="Silencio por lado")] = 0.1,
-    fade_duration: Annotated[float, Body(ge=0.0, le=1.0, description="Fade-in/out")] = 0.1,
-    audio_chunk_duration: Annotated[float, Body(ge=1.0, le=60.0, description="Duración target por chunk")] = 15.0,
-    audio_chunk_threshold: Annotated[float, Body(ge=5.0, le=120.0, description="Umbral para chunking")] = 30.0,
+    emotion: Annotated[str | None, Body(description="Emoción (solo engines que la soporten)")] = None,
     stream: Annotated[bool, Query(description="Streaming por chunks")] = False,
     accept: Annotated[str | None, Header(description="Tipo de contenido esperado")] = None,
     tts_service: TtsService = Depends(get_tts_service),
 ) -> Response:
     """Sintetiza texto con un instruct de voice design personalizado."""
-    if emotion and emotion.lower() not in SUPPORTED_EMOTIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "detail": f"Emoción no soportada: {emotion}",
-                "error_type": "unsupported_emotion",
-                "emotion": emotion,
-                "supported_emotions": SUPPORTED_EMOTIONS,
-            },
-        )
     try:
-        gen_params = _build_generation_params(
-            num_step, denoise, guidance_scale, duration,
-            preprocess_prompt, postprocess_output, pad_duration, fade_duration,
-            audio_chunk_duration, audio_chunk_threshold,
-        )
         pool = get_engine_pool()
         await pool.acquire()
         try:
@@ -266,11 +190,11 @@ async def synthesize_instruct(
                 language=language,
                 speed=speed,
                 emotion=emotion,
-                generation_params=gen_params,
             )
         finally:
             pool.release()
-    except (UnsupportedLanguageError, UnsupportedInstructError, EngineUnavailableError) as e:
+    except (UnsupportedLanguageError, UnsupportedInstructError,
+            EngineUnavailableError, FeatureNotSupportedError) as e:
         _handle_tts_error(e)
     except Exception as e:
         _handle_tts_error(e)
@@ -288,10 +212,28 @@ async def synthesize_instruct(
 @router.get(
     "/voice-design/tokens",
     summary="Listar tokens válidos para voice design",
-    description="Devuelve los tokens de instruct agrupados por categoría.",
+    description="Devuelve los tokens de instruct agrupados por categoría (solo OmniVoice engine).",
 )
 async def get_voice_design_tokens() -> dict:
-    """Devuelve los tokens válidos para instruct de voice design."""
+    """Devuelve los tokens válidos para instruct de voice design.
+
+    Returns empty categories if the active engine does not support voice design.
+    """
+    from omnivoice_api.settings import get_settings
+    settings = get_settings()
+
+    if settings.TTS_ENGINE != "omnivoice":
+        return {
+            "note": f"Voice design no soportado por el engine '{settings.TTS_ENGINE}'. "
+                    "Cambia TTS_ENGINE=omnivoice para usar voice design.",
+            "gender": [],
+            "age": [],
+            "pitch": [],
+            "style": [],
+            "english_accent": [],
+            "chinese_dialect": [],
+        }
+
     return {
         "gender": ["male", "female"],
         "age": ["child", "teenager", "young adult", "middle-aged", "elderly"],
