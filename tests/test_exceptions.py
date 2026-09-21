@@ -74,24 +74,18 @@ class TestUnsupportedInstructError:
     """Tests for UnsupportedInstructError."""
 
     def test_attributes(self) -> None:
-        err = UnsupportedInstructError(
-            "bad token", {"bad token": "good token"}, ["good token"]
-        )
+        err = UnsupportedInstructError("bad token", {"bad token": "good token"}, ["good token"])
         assert err.instruct == "bad token"
         assert err.invalid_items == {"bad token": "good token"}
         assert err.valid_items == ["good token"]
 
     def test_message_with_suggestion(self) -> None:
-        err = UnsupportedInstructError(
-            "bad", {"bad": "good"}, ["good"]
-        )
+        err = UnsupportedInstructError("bad", {"bad": "good"}, ["good"])
         assert "bad" in str(err)
         assert "good" in str(err)
 
     def test_message_without_suggestion(self) -> None:
-        err = UnsupportedInstructError(
-            "bad", {"bad": None}, ["good"]
-        )
+        err = UnsupportedInstructError("bad", {"bad": None}, ["good"])
         assert "bad" in str(err)
 
     def test_inherits_from_base(self) -> None:

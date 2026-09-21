@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -22,15 +21,24 @@ from omnivoice_api.main import app
 
 @pytest_asyncio.fixture
 async def async_client() -> AsyncIterator[AsyncClient]:
-    """Cliente HTTP asíncrono para tests de integración."""
+    """Cliente HTTP asíncrono para tests de integración.
+
+    Ejecuta el lifespan de FastAPI manualmente, porque ``httpx``
+    ``ASGITransport`` no lo dispara: sin él, ``main._active_engine``
+    queda ``None`` y los endpoints de health/ready/emotions no responden.
+    """
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=transport, base_url="http://test") as client,
+    ):
         yield client
 
 
 @pytest.fixture(scope="session")
 def event_loop():
     import asyncio
+
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
@@ -54,10 +62,12 @@ def _isolate_external_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("OMNIVOICE_VENV_DIR", str(fake_venv))
     monkeypatch.setenv("OMNIVOICE_USE_MOCK", "true")
     monkeypatch.setenv("OMNIVOICE_FALLBACK_TO_MOCK", "false")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
 
     yield
 
     import omnivoice_api.core.omnivoice_engine as engine_mod
+
     engine_mod._engine_instance = None
     OmniVoiceEngine._instance = None
     OmniVoiceEngine._initialized = False
@@ -87,7 +97,9 @@ class FakeEngineClient(OmniVoiceEngineClient):
         self.stopped = True
 
     async def health(self) -> EngineHealth:
-        return EngineHealth(reachable=True, model_loaded=True, gpu_available=True, vram_free_mb=4096)
+        return EngineHealth(
+            reachable=True, model_loaded=True, gpu_available=True, vram_free_mb=4096
+        )
 
     async def list_stock_voices(self, language: str | None = None) -> list[StockVoice]:
         if language is None:
@@ -102,7 +114,11 @@ class FakeEngineClient(OmniVoiceEngineClient):
         speed: float = 1.0,
         generation_params: GenerationParams | None = None,
     ) -> AudioResult:
-        wav = b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+        wav = (
+            b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00"
+            b"\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00"
+            b"\x02\x00\x10\x00data\x00\x00\x00\x00"
+        )
         return AudioResult(wav_bytes=wav, duration_sec=0.5, sample_rate=22050)
 
     async def synthesize_instruct(
@@ -113,7 +129,11 @@ class FakeEngineClient(OmniVoiceEngineClient):
         speed: float = 1.0,
         generation_params: GenerationParams | None = None,
     ) -> AudioResult:
-        wav = b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+        wav = (
+            b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00"
+            b"\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00"
+            b"\x02\x00\x10\x00data\x00\x00\x00\x00"
+        )
         return AudioResult(wav_bytes=wav, duration_sec=0.5, sample_rate=22050)
 
     async def synthesize_clone(
@@ -125,7 +145,11 @@ class FakeEngineClient(OmniVoiceEngineClient):
         speed: float = 1.0,
         generation_params: GenerationParams | None = None,
     ) -> AudioResult:
-        wav = b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+        wav = (
+            b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00"
+            b"\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00"
+            b"\x02\x00\x10\x00data\x00\x00\x00\x00"
+        )
         return AudioResult(wav_bytes=wav, duration_sec=0.5, sample_rate=22050)
 
 

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from omnivoice_api.core.engine_client import AudioResult
 from omnivoice_api.core.exceptions import (
-    UnsupportedLanguageError,
     VoiceNotFoundError,
 )
 from omnivoice_api.services.tts import TtsService
@@ -23,7 +21,9 @@ async def test_synthesize_stock_fallback_to_stock_voice() -> None:
         MagicMock(voice_id="es-mx-male", language="es"),
     ]
     mock_engine.synthesize_stock.return_value = AudioResult(
-        wav_bytes=b"wav", duration_sec=1.0, sample_rate=22050,
+        wav_bytes=b"wav",
+        duration_sec=1.0,
+        sample_rate=22050,
     )
 
     mock_voice_service = AsyncMock()
@@ -48,7 +48,9 @@ async def test_synthesize_stock_fallback_on_other_exception() -> None:
         MagicMock(voice_id="es-mx-male", language="es"),
     ]
     mock_engine.synthesize_stock.return_value = AudioResult(
-        wav_bytes=b"wav", duration_sec=1.0, sample_rate=22050,
+        wav_bytes=b"wav",
+        duration_sec=1.0,
+        sample_rate=22050,
     )
 
     mock_voice_service = AsyncMock()
@@ -69,7 +71,9 @@ async def test_synthesize_stock_cloned_voice() -> None:
     """Test de síntesis con voz clonada (voice found in repository)."""
     mock_engine = AsyncMock()
     mock_engine.synthesize_clone.return_value = AudioResult(
-        wav_bytes=b"cloned-wav", duration_sec=1.0, sample_rate=22050,
+        wav_bytes=b"cloned-wav",
+        duration_sec=1.0,
+        sample_rate=22050,
     )
 
     mock_voice_service = AsyncMock()
@@ -94,7 +98,9 @@ async def test_synthesize_stock_designed_voice() -> None:
     """Test de síntesis con voz diseñada (instruct preset from DB)."""
     mock_engine = AsyncMock()
     mock_engine.synthesize_instruct.return_value = AudioResult(
-        wav_bytes=b"designed-wav", duration_sec=1.5, sample_rate=22050,
+        wav_bytes=b"designed-wav",
+        duration_sec=1.5,
+        sample_rate=22050,
     )
 
     mock_voice_service = AsyncMock()
@@ -118,7 +124,6 @@ async def test_synthesize_stock_designed_voice() -> None:
         instruct="female, young adult, british accent",
         speed=1.0,
         emotion=None,
-        generation_params=None,
         language="en",
     )
 
@@ -131,7 +136,9 @@ async def test_synthesize_stock_designed_voice_not_found_falls_to_stock() -> Non
         MagicMock(voice_id="es-mx-male", language="es"),
     ]
     mock_engine.synthesize_stock.return_value = AudioResult(
-        wav_bytes=b"stock-wav", duration_sec=1.0, sample_rate=22050,
+        wav_bytes=b"stock-wav",
+        duration_sec=1.0,
+        sample_rate=22050,
     )
 
     mock_voice_service = AsyncMock()
@@ -155,7 +162,9 @@ async def test_synthesize_clone_uses_voice_language() -> None:
     """Test that synthesize_clone uses the voice's own language from DB."""
     mock_engine = AsyncMock()
     mock_engine.synthesize_clone.return_value = AudioResult(
-        wav_bytes=b"cloned-wav", duration_sec=2.0, sample_rate=22050,
+        wav_bytes=b"cloned-wav",
+        duration_sec=2.0,
+        sample_rate=22050,
     )
 
     mock_voice_service = AsyncMock()
@@ -177,10 +186,7 @@ async def test_synthesize_clone_uses_voice_language() -> None:
         text="Hola",
         reference_audio_path="/path/to/ref.wav",
         ref_text=None,
-        instruct=None,
         speed=1.0,
-        emotion=None,
-        generation_params=None,
         language="es",  # uses voice's language, not API parameter
     )
 
@@ -190,7 +196,9 @@ async def test_synthesize_clone_success() -> None:
     """Test de síntesis con voz clonada exitosa."""
     mock_engine = AsyncMock()
     mock_engine.synthesize_clone.return_value = AudioResult(
-        wav_bytes=b"cloned-wav", duration_sec=2.0, sample_rate=22050,
+        wav_bytes=b"cloned-wav",
+        duration_sec=2.0,
+        sample_rate=22050,
     )
 
     mock_voice_service = AsyncMock()
@@ -211,10 +219,7 @@ async def test_synthesize_clone_success() -> None:
         text="Hola",
         reference_audio_path="/path/to/ref.wav",
         ref_text=None,
-        instruct=None,
         speed=1.0,
-        emotion=None,
-        generation_params=None,
         language="es",
     )
 
@@ -223,9 +228,9 @@ async def test_synthesize_clone_success() -> None:
 async def test_get_engine_client_creates_new() -> None:
     """Test de que _get_engine_client crea un cliente nuevo si es None."""
     service = TtsService(engine_client=None, voice_service=AsyncMock())
-    with patch("omnivoice_api.services.tts.OmniVoiceEngineClient") as MockClient:
+    with patch("omnivoice_api.services.tts.OmniVoiceEngineClient") as engine_client_cls:
         mock_instance = AsyncMock()
-        MockClient.return_value = mock_instance
+        engine_client_cls.return_value = mock_instance
         client = await service._get_engine_client()
         assert client is mock_instance
         mock_instance.start.assert_called_once()
@@ -235,9 +240,9 @@ async def test_get_engine_client_creates_new() -> None:
 async def test_get_voice_service_creates_new() -> None:
     """Test de que _get_voice_service crea un servicio nuevo si es None."""
     service = TtsService(engine_client=AsyncMock(), voice_service=None)
-    with patch("omnivoice_api.services.tts.VoiceService") as MockService:
+    with patch("omnivoice_api.services.tts.VoiceService") as voice_service_cls:
         mock_instance = AsyncMock()
-        MockService.return_value = mock_instance
+        voice_service_cls.return_value = mock_instance
         vs = await service._get_voice_service()
         assert vs is mock_instance
         mock_instance.initialize.assert_called_once()
@@ -260,7 +265,9 @@ async def test_conversation_with_cloned_voice() -> None:
 
     mock_tts_service = AsyncMock()
     mock_tts_service.synthesize_stock.return_value = AudioResult(
-        wav_bytes=b"synthesized-audio", duration_sec=1.0, sample_rate=22050,
+        wav_bytes=b"synthesized-audio",
+        duration_sec=1.0,
+        sample_rate=22050,
     )
 
     convo_service = ConversationService(tts_service=mock_tts_service)

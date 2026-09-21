@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from pathlib import Path
@@ -13,7 +14,6 @@ from omnivoice_api.core.cleanup import (
     cleanup_expired_outputs,
     start_cleanup_task,
     stop_cleanup_task,
-    _background_task,
 )
 
 
@@ -36,10 +36,8 @@ async def test_cleanup_removes_expired_files(tmp_path: Path) -> None:
     )
     await asyncio.sleep(0.1)
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
     assert not old_file.exists()
     assert recent_file.exists()
@@ -59,10 +57,8 @@ async def test_cleanup_ignores_non_wav_files(tmp_path: Path) -> None:
     )
     await asyncio.sleep(0.1)
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
     assert old_file.exists()
 
@@ -77,10 +73,8 @@ async def test_cleanup_handles_nonexistent_dir(tmp_path: Path) -> None:
     )
     await asyncio.sleep(0.1)
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
 
 @pytest.mark.asyncio
@@ -91,10 +85,8 @@ async def test_cleanup_exits_on_cancel(tmp_path: Path) -> None:
     )
     await asyncio.sleep(0.05)
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
     assert task.done()
 
 

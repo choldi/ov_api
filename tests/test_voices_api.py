@@ -2,27 +2,24 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from omnivoice_api.main import app
-from omnivoice_api.api.v1.voices import get_engine_client, get_voice_service
-from omnivoice_api.core.engine_client import StockVoice
+from omnivoice_api.api.v1.voices import get_voice_service
 from omnivoice_api.core.exceptions import (
     InvalidReferenceAudioError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
+from omnivoice_api.main import app
 
 
 @pytest.fixture
 def mock_voice_service() -> AsyncMock:
     """Servicio de voces mockeado."""
-    service = AsyncMock()
-    return service
+    return AsyncMock()
 
 
 @pytest.mark.asyncio
@@ -185,6 +182,7 @@ async def test_clone_voice_success_endpoint() -> None:
             # Create a minimal WAV file for upload
             import io
             import wave
+
             wav_buffer = io.BytesIO()
             with wave.open(wav_buffer, "wb") as wav_file:
                 wav_file.setnchannels(1)
@@ -242,6 +240,7 @@ async def test_clone_voice_conflict() -> None:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             import io
             import wave
+
             wav_buffer = io.BytesIO()
             with wave.open(wav_buffer, "wb") as wav_file:
                 wav_file.setnchannels(1)
@@ -275,6 +274,7 @@ async def test_clone_voice_unsupported_language() -> None:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             import io
             import wave
+
             wav_buffer = io.BytesIO()
             with wave.open(wav_buffer, "wb") as wav_file:
                 wav_file.setnchannels(1)
@@ -308,6 +308,7 @@ async def test_clone_voice_invalid_audio() -> None:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             import io
             import wave
+
             wav_buffer = io.BytesIO()
             with wave.open(wav_buffer, "wb") as wav_file:
                 wav_file.setnchannels(1)
@@ -341,6 +342,7 @@ async def test_clone_voice_internal_error() -> None:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             import io
             import wave
+
             wav_buffer = io.BytesIO()
             with wave.open(wav_buffer, "wb") as wav_file:
                 wav_file.setnchannels(1)
@@ -437,7 +439,10 @@ async def test_list_designed_voices() -> None:
 async def test_get_designed_voice_success() -> None:
     mock_service = AsyncMock()
     mock_service.get_designed_voice.return_value = {
-        "id": "test-id", "name": "v1", "instruct": "male", "language": "en",
+        "id": "test-id",
+        "name": "v1",
+        "instruct": "male",
+        "language": "en",
     }
 
     async def override():

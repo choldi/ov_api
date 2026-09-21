@@ -83,6 +83,7 @@ class TestGetEnginePool:
         """Test de que retorna la misma instancia."""
         # Reset global state
         import omnivoice_api.core.engine_pool as mod
+
         mod._engine_pool = None
 
         pool1 = get_engine_pool()
@@ -92,6 +93,7 @@ class TestGetEnginePool:
     def test_default_max_concurrent(self) -> None:
         """Test de que el pool por defecto tiene max_concurrent=2."""
         import omnivoice_api.core.engine_pool as mod
+
         mod._engine_pool = None
 
         pool = get_engine_pool()

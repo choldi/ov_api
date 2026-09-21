@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
-import aiosqlite
 import pytest
 
 from omnivoice_api.core.exceptions import VoiceNotFoundError
@@ -34,7 +33,9 @@ async def test_initialize_creates_schema(repo: VoiceRepository) -> None:
     # Verify table exists by trying to use it
     conn = await repo._get_connection()
     try:
-        cursor = await conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cloned_voices'")
+        cursor = await conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='cloned_voices'"
+        )
         row = await cursor.fetchone()
         assert row is not None
     finally:
@@ -152,7 +153,9 @@ async def test_list_with_pagination(repo: VoiceRepository) -> None:
     """Test de listar voces con paginación."""
     await repo.initialize()
     for i in range(5):
-        await repo.create(name=f"voice{i}", language="es", reference_path=f"/{i}.wav", duration_sec=1.0)
+        await repo.create(
+            name=f"voice{i}", language="es", reference_path=f"/{i}.wav", duration_sec=1.0
+        )
     voices = await repo.list(limit=2, offset=0)
     assert len(voices) == 2
     voices = await repo.list(limit=2, offset=2)
@@ -165,7 +168,9 @@ async def test_list_with_pagination(repo: VoiceRepository) -> None:
 async def test_update_name(repo: VoiceRepository) -> None:
     """Test de actualizar nombre de voz."""
     await repo.initialize()
-    voice_id = await repo.create(name="old-name", language="es", reference_path="/a.wav", duration_sec=1.0)
+    voice_id = await repo.create(
+        name="old-name", language="es", reference_path="/a.wav", duration_sec=1.0
+    )
     updated = await repo.update(voice_id, name="new-name")
     assert updated is True
     voice = await repo.get_by_id(voice_id)
@@ -177,8 +182,11 @@ async def test_update_metadata(repo: VoiceRepository) -> None:
     """Test de actualizar metadata de voz."""
     await repo.initialize()
     voice_id = await repo.create(
-        name="test-voice", language="es", reference_path="/a.wav",
-        duration_sec=1.0, metadata={"key1": "val1"},
+        name="test-voice",
+        language="es",
+        reference_path="/a.wav",
+        duration_sec=1.0,
+        metadata={"key1": "val1"},
     )
     updated = await repo.update(voice_id, metadata={"key2": "val2"})
     assert updated is True
@@ -190,7 +198,9 @@ async def test_update_metadata(repo: VoiceRepository) -> None:
 async def test_update_no_changes(repo: VoiceRepository) -> None:
     """Test de update sin cambios retorna False."""
     await repo.initialize()
-    voice_id = await repo.create(name="test-voice", language="es", reference_path="/a.wav", duration_sec=1.0)
+    voice_id = await repo.create(
+        name="test-voice", language="es", reference_path="/a.wav", duration_sec=1.0
+    )
     updated = await repo.update(voice_id)
     assert updated is False
 
@@ -207,7 +217,9 @@ async def test_update_not_found(repo: VoiceRepository) -> None:
 async def test_delete_success(repo: VoiceRepository) -> None:
     """Test de eliminación de voz."""
     await repo.initialize()
-    voice_id = await repo.create(name="test-voice", language="es", reference_path="/a.wav", duration_sec=1.0)
+    voice_id = await repo.create(
+        name="test-voice", language="es", reference_path="/a.wav", duration_sec=1.0
+    )
     deleted = await repo.delete(voice_id)
     assert deleted is True
     with pytest.raises(VoiceNotFoundError):
@@ -226,7 +238,9 @@ async def test_delete_not_found(repo: VoiceRepository) -> None:
 async def test_voice_exists_true(repo: VoiceRepository) -> None:
     """Test de verificación de existencia - voz existe."""
     await repo.initialize()
-    voice_id = await repo.create(name="test-voice", language="es", reference_path="/a.wav", duration_sec=1.0)
+    voice_id = await repo.create(
+        name="test-voice", language="es", reference_path="/a.wav", duration_sec=1.0
+    )
     assert await repo.voice_exists(voice_id) is True
 
 
@@ -241,7 +255,9 @@ async def test_voice_exists_false(repo: VoiceRepository) -> None:
 async def test_get_by_id_no_metadata(repo: VoiceRepository) -> None:
     """Test de obtener voz sin metadata."""
     await repo.initialize()
-    voice_id = await repo.create(name="test-voice", language="es", reference_path="/a.wav", duration_sec=1.0)
+    voice_id = await repo.create(
+        name="test-voice", language="es", reference_path="/a.wav", duration_sec=1.0
+    )
     voice = await repo.get_by_id(voice_id)
     assert voice["metadata"] == {}
 

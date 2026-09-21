@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -12,8 +9,8 @@ from starlette.testclient import TestClient
 
 from omnivoice_api.middleware import APIKeyMiddleware, RequestIDMiddleware
 
-
 # --- Helpers ---
+
 
 async def dummy_handler(request: Request) -> Response:
     """Endpoint dummy para tests."""
@@ -33,6 +30,7 @@ def _build_app(api_key: str = "") -> Starlette:
 
 
 # --- RequestIDMiddleware tests ---
+
 
 class TestRequestIDMiddleware:
     """Tests para RequestIDMiddleware."""
@@ -63,6 +61,7 @@ class TestRequestIDMiddleware:
 
 
 # --- APIKeyMiddleware tests ---
+
 
 class TestAPIKeyMiddleware:
     """Tests para APIKeyMiddleware."""

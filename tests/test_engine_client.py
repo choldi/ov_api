@@ -1,23 +1,17 @@
-"""Tests unitarios para el cliente del engine OmniVoice."""
+"""Tests unitarios para el cliente del engine (multi-engine)."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from omnivoice_api.core.engine_client import (
     AudioResult,
-    EngineHealth,
     OmniVoiceEngineClient,
-    StockVoice,
 )
-from omnivoice_api.core.omnivoice_engine import GenerationParams
 from omnivoice_api.core.exceptions import (
-    EngineUnavailableError,
     UnsupportedInstructError,
-    UnsupportedLanguageError,
-    VoiceNotFoundError,
 )
 
 
@@ -36,127 +30,175 @@ def _make_wav_bytes(sample_rate: int = 22050, duration_sec: float = 1.0) -> byte
     return buffer.getvalue()
 
 
-@pytest.fixture
-def engine_client() -> OmniVoiceEngineClient:
-    return OmniVoiceEngineClient()
+@pytest.mark.asyncio
+async def test_start_and_stop() -> None:
+    """El cliente inicializa/cierra el engine inyectado al arrancar/parar."""
+    mock_engine = AsyncMock()
+    client = OmniVoiceEngineClient(engine=mock_engine)
+
+    await client.start()
+    assert client._started is True
+    assert client.engine is mock_engine
+    mock_engine.initialize.assert_awaited_once()
+
+    await client.stop()
+    assert client._started is False
+    assert client.engine is None
+    mock_engine.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_start_and_stop(engine_client: OmniVoiceEngineClient) -> None:
-    with patch("omnivoice_api.core.engine_client.get_engine", new_callable=AsyncMock) as mock_get_engine:
-        mock_engine = AsyncMock()
-        mock_get_engine.return_value = mock_engine
-        await engine_client.start()
-        assert engine_client._started is True
-        assert engine_client._engine is mock_engine
-
-        with patch("omnivoice_api.core.engine_client.close_engine", new_callable=AsyncMock):
-            await engine_client.stop()
-            assert engine_client._started is False
-
-
-@pytest.mark.asyncio
-async def test_synthesize_stock(engine_client: OmniVoiceEngineClient) -> None:
+async def test_synthesize_stock() -> None:
+    """synthesize_stock delega en engine.synthesize() y envuelve el WAV."""
     wav = _make_wav_bytes()
-    with patch("omnivoice_api.core.engine_client.get_engine", new_callable=AsyncMock) as mock_get_engine:
-        mock_engine = AsyncMock()
-        mock_engine.synthesize_stock.return_value = wav
-        mock_get_engine.return_value = mock_engine
-        await engine_client.start()
+    mock_engine = AsyncMock()
+    mock_engine.synthesize.return_value = wav
+    client = OmniVoiceEngineClient(engine=mock_engine)
+    await client.start()
 
-        result = await engine_client.synthesize_stock(
-            text="Hola",
-            voice_id="es-mx-male",
-        )
-        assert isinstance(result, AudioResult)
-        assert result.wav_bytes == wav
-
-
-@pytest.mark.asyncio
-async def test_synthesize_stock_with_generation_params(engine_client: OmniVoiceEngineClient) -> None:
-    wav = _make_wav_bytes()
-    params = GenerationParams(num_step=16, denoise=False)
-    with patch("omnivoice_api.core.engine_client.get_engine", new_callable=AsyncMock) as mock_get_engine:
-        mock_engine = AsyncMock()
-        mock_engine.synthesize_stock.return_value = wav
-        mock_get_engine.return_value = mock_engine
-        await engine_client.start()
-
-        result = await engine_client.synthesize_stock(
-            text="Hola",
-            voice_id="es-mx-male",
-            generation_params=params,
-        )
-        assert isinstance(result, AudioResult)
-        mock_engine.synthesize_stock.assert_called_once_with(
-            text="Hola", voice_id="es-mx-male", speed=1.0, emotion=None,
-            generation_params=params, language=None,
-        )
+    result = await client.synthesize_stock(text="Hola", voice_id="es-mx-male")
+    assert isinstance(result, AudioResult)
+    assert result.wav_bytes == wav
+    mock_engine.synthesize.assert_awaited_once_with(
+        text="Hola",
+        voice_id="es-mx-male",
+        language="es",
+        speed=1.0,
+        emotion=None,
+    )
 
 
 @pytest.mark.asyncio
-async def test_synthesize_instruct(engine_client: OmniVoiceEngineClient) -> None:
+async def test_synthesize_stock_passes_params() -> None:
+    """Los parámetros speed/emotion/language se propagan al engine."""
     wav = _make_wav_bytes()
-    with patch("omnivoice_api.core.engine_client.get_engine", new_callable=AsyncMock) as mock_get_engine:
-        mock_engine = AsyncMock()
-        mock_engine.synthesize_instruct.return_value = wav
-        mock_get_engine.return_value = mock_engine
-        await engine_client.start()
+    mock_engine = AsyncMock()
+    mock_engine.synthesize.return_value = wav
+    client = OmniVoiceEngineClient(engine=mock_engine)
+    await client.start()
 
-        result = await engine_client.synthesize_instruct(
+    result = await client.synthesize_stock(
+        text="Hola",
+        voice_id="es-mx-male",
+        speed=0.9,
+        emotion="happy",
+        language="es",
+    )
+    assert isinstance(result, AudioResult)
+    mock_engine.synthesize.assert_awaited_once_with(
+        text="Hola",
+        voice_id="es-mx-male",
+        language="es",
+        speed=0.9,
+        emotion="happy",
+    )
+
+
+@pytest.mark.asyncio
+async def test_synthesize_instruct() -> None:
+    """synthesize_instruct delega en engine.synthesize_instruct()."""
+    wav = _make_wav_bytes()
+    mock_engine = AsyncMock()
+    mock_engine.synthesize_instruct.return_value = wav
+    client = OmniVoiceEngineClient(engine=mock_engine)
+    await client.start()
+
+    result = await client.synthesize_instruct(
+        text="Hello",
+        instruct="female, british accent",
+        language="en",
+    )
+    assert isinstance(result, AudioResult)
+    assert result.wav_bytes == wav
+    mock_engine.synthesize_instruct.assert_awaited_once_with(
+        text="Hello",
+        instruct="female, british accent",
+        language="en",
+        speed=1.0,
+        emotion=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_synthesize_instruct_propagates_invalid_instruct_error() -> None:
+    """Los errores del engine se propagan sin traducir (p.ej. UX del router)."""
+    mock_engine = AsyncMock()
+    mock_engine.synthesize_instruct.side_effect = UnsupportedInstructError(
+        "Mexican accent", {"mexican accent": None}, ["male", "female"]
+    )
+    client = OmniVoiceEngineClient(engine=mock_engine)
+    await client.start()
+
+    with pytest.raises(UnsupportedInstructError):
+        await client.synthesize_instruct(
             text="Hello",
-            instruct="female, british accent",
+            instruct="Mexican accent",
         )
-        assert isinstance(result, AudioResult)
-        assert result.wav_bytes == wav
 
 
 @pytest.mark.asyncio
-async def test_synthesize_clone_with_instruct(engine_client: OmniVoiceEngineClient) -> None:
+async def test_synthesize_clone() -> None:
+    """synthesize_clone delega en engine.synthesize_clone() con ref_text."""
     wav = _make_wav_bytes()
-    with patch("omnivoice_api.core.engine_client.get_engine", new_callable=AsyncMock) as mock_get_engine:
-        mock_engine = AsyncMock()
-        mock_engine.synthesize_clone.return_value = wav
-        mock_get_engine.return_value = mock_engine
-        await engine_client.start()
+    mock_engine = AsyncMock()
+    mock_engine.synthesize_clone.return_value = wav
+    client = OmniVoiceEngineClient(engine=mock_engine)
+    await client.start()
 
-        result = await engine_client.synthesize_clone(
-            text="Hola",
-            reference_audio_path="/path/to/ref.wav",
-            instruct="male, portuguese accent",
-        )
-        assert isinstance(result, AudioResult)
+    result = await client.synthesize_clone(
+        text="Hola",
+        reference_audio_path="/path/to/ref.wav",
+        language="es",
+    )
+    assert isinstance(result, AudioResult)
+    assert result.wav_bytes == wav
+    mock_engine.synthesize_clone.assert_awaited_once_with(
+        text="Hola",
+        reference_audio_path="/path/to/ref.wav",
+        language="es",
+        speed=1.0,
+        ref_text=None,
+    )
 
 
 @pytest.mark.asyncio
-async def test_synthesize_clone_without_instruct(engine_client: OmniVoiceEngineClient) -> None:
+async def test_synthesize_clone_with_ref_text() -> None:
+    """ref_text (transcripción precomputada) se propaga al engine."""
     wav = _make_wav_bytes()
-    with patch("omnivoice_api.core.engine_client.get_engine", new_callable=AsyncMock) as mock_get_engine:
-        mock_engine = AsyncMock()
-        mock_engine.synthesize_clone.return_value = wav
-        mock_get_engine.return_value = mock_engine
-        await engine_client.start()
+    mock_engine = AsyncMock()
+    mock_engine.synthesize_clone.return_value = wav
+    client = OmniVoiceEngineClient(engine=mock_engine)
+    await client.start()
 
-        result = await engine_client.synthesize_clone(
-            text="Hola",
-            reference_audio_path="/path/to/ref.wav",
-        )
-        assert isinstance(result, AudioResult)
+    result = await client.synthesize_clone(
+        text="Hola",
+        reference_audio_path="/path/to/ref.wav",
+        ref_text="Hola, esta es la transcripción",
+        language="es",
+    )
+    assert isinstance(result, AudioResult)
+    mock_engine.synthesize_clone.assert_awaited_once_with(
+        text="Hola",
+        reference_audio_path="/path/to/ref.wav",
+        language="es",
+        speed=1.0,
+        ref_text="Hola, esta es la transcripción",
+    )
 
 
 @pytest.mark.asyncio
-async def test_health(engine_client: OmniVoiceEngineClient) -> None:
-    with patch("omnivoice_api.core.engine_client.get_engine", new_callable=AsyncMock) as mock_get_engine:
-        mock_engine = AsyncMock()
-        mock_engine.health_check.return_value = {
-            "model_loaded": True,
-            "gpu_available": True,
-            "device": "cuda:0",
-            "stock_voices_count": 10,
-        }
-        mock_get_engine.return_value = mock_engine
-        await engine_client.start()
+async def test_health() -> None:
+    """health() mapea health_check() del engine a EngineHealth."""
+    mock_engine = AsyncMock()
+    mock_engine.health_check.return_value = {
+        "model_loaded": True,
+        "gpu_available": True,
+        "device": "cuda:0",
+        "stock_voices_count": 10,
+    }
+    client = OmniVoiceEngineClient(engine=mock_engine)
+    await client.start()
 
-        health = await engine_client.health()
-        assert health.model_loaded is True
-        assert health.gpu_available is True
+    health = await client.health()
+    assert health.model_loaded is True
+    assert health.gpu_available is True

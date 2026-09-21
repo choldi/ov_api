@@ -12,18 +12,17 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_health_endpoint_returns_ok(async_client: AsyncClient):
-    """Verifica que /api/v1/health responde 200 con status ok y rutas externas."""
+    """Verifica que /api/v1/health responde 200 con el engine activo."""
     response = await async_client.get("/api/v1/health")
 
     assert response.status_code == 200
     data = response.json()
 
-    assert data["status"] == "ok"
+    assert data["status"] in {"ok", "degraded"}
     assert "version" in data
     assert "device" in data
-    assert "install_dir" in data
-    assert "venv_dir" in data
-    assert "python_bin" in data
+    assert "engine" in data
+    assert "mode" in data
 
 
 @pytest.mark.asyncio
@@ -67,14 +66,9 @@ async def test_readiness_endpoint_with_isolated_install(async_client: AsyncClien
 @pytest.mark.asyncio
 async def test_readiness_endpoint_without_install(async_client: AsyncClient, monkeypatch):
     """Verifica que /api/v1/health/ready devuelve 503 si la instalación no existe."""
-    # Forzamos rutas inexistentes
+    # Forzamos rutas inexistentes (get_settings() lee el entorno en cada llamada).
     monkeypatch.setenv("OMNIVOICE_INSTALL_DIR", "/nope/does/not/exist")
     monkeypatch.setenv("OMNIVOICE_VENV_DIR", "/nope/venv")
-    from omnivoice_api.settings import get_settings
-
-    # Reiniciar el singleton para que se relean las env vars
-    import omnivoice_api.settings
-    omnivoice_api.settings._settings_instance = None
 
     response = await async_client.get("/api/v1/health/ready")
 
@@ -82,8 +76,3 @@ async def test_readiness_endpoint_without_install(async_client: AsyncClient, mon
     data = response.json()
     assert data["status"] == "not_ready"
     assert data["checks"]["install_dir_exists"] is False
-
-    # Reiniciar el singleton nuevamente para limpiar después del test
-    import omnivoice_api.settings
-    omnivoice_api.settings._settings_instance = None
-

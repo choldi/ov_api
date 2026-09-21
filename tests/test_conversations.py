@@ -48,10 +48,12 @@ async def test_conversation_minimum_turns():
 async def test_conversation_empty_text():
     service = ConversationService(tts_service=AsyncMock())
     with pytest.raises(ValueError, match="texto vacío"):
-        await service.generate(turns=[
-            ConversationTurn(voice_id="es-mx-male", text=""),
-            ConversationTurn(voice_id="es-mx-male", text="hello"),
-        ])
+        await service.generate(
+            turns=[
+                ConversationTurn(voice_id="es-mx-male", text=""),
+                ConversationTurn(voice_id="es-mx-male", text="hello"),
+            ]
+        )
 
 
 @pytest.mark.asyncio
@@ -60,24 +62,30 @@ async def test_conversation_voice_not_found():
     mock_tts.synthesize_stock.side_effect = VoiceNotFoundError("nonexistent", "stock")
     service = ConversationService(tts_service=mock_tts)
     with pytest.raises(VoiceNotFoundError):
-        await service.generate(turns=[
-            ConversationTurn(voice_id="nonexistent", text="hello", language="es"),
-            ConversationTurn(voice_id="nonexistent", text="world", language="es"),
-        ])
+        await service.generate(
+            turns=[
+                ConversationTurn(voice_id="nonexistent", text="hello", language="es"),
+                ConversationTurn(voice_id="nonexistent", text="world", language="es"),
+            ]
+        )
 
 
 @pytest.mark.asyncio
 async def test_conversation_success():
     mock_tts = AsyncMock()
     mock_tts.synthesize_stock.return_value = AudioResult(
-        wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+        wav_bytes=_make_wav(),
+        duration_sec=0.5,
+        sample_rate=22050,
     )
     service = ConversationService(tts_service=mock_tts)
 
-    result = await service.generate(turns=[
-        ConversationTurn(voice_id="es-mx-male", text="Hola", language="es"),
-        ConversationTurn(voice_id="es-mx-female", text="¿Qué tal?", language="es"),
-    ])
+    result = await service.generate(
+        turns=[
+            ConversationTurn(voice_id="es-mx-male", text="Hola", language="es"),
+            ConversationTurn(voice_id="es-mx-female", text="¿Qué tal?", language="es"),
+        ]
+    )
 
     assert isinstance(result, AudioResult)
     assert result.wav_bytes[:4] == b"RIFF"
@@ -88,15 +96,19 @@ async def test_conversation_success():
 async def test_conversation_multiple_turns():
     mock_tts = AsyncMock()
     mock_tts.synthesize_stock.return_value = AudioResult(
-        wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+        wav_bytes=_make_wav(),
+        duration_sec=0.5,
+        sample_rate=22050,
     )
     service = ConversationService(tts_service=mock_tts)
 
-    result = await service.generate(turns=[
-        ConversationTurn(voice_id="v1", text="First", language="es"),
-        ConversationTurn(voice_id="v2", text="Second", language="es"),
-        ConversationTurn(voice_id="v3", text="Third", language="en"),
-    ])
+    result = await service.generate(
+        turns=[
+            ConversationTurn(voice_id="v1", text="First", language="es"),
+            ConversationTurn(voice_id="v2", text="Second", language="es"),
+            ConversationTurn(voice_id="v3", text="Third", language="en"),
+        ]
+    )
 
     assert isinstance(result, AudioResult)
     assert mock_tts.synthesize_stock.call_count == 3
@@ -109,10 +121,12 @@ async def test_conversation_concatenation():
     wav1 = _make_real_wav(0.1)
     wav2 = _make_real_wav(0.1)
 
-    mock_tts.synthesize_stock = AsyncMock(side_effect=[
-        AudioResult(wav_bytes=wav1, duration_sec=0.1, sample_rate=22050),
-        AudioResult(wav_bytes=wav2, duration_sec=0.1, sample_rate=22050),
-    ])
+    mock_tts.synthesize_stock = AsyncMock(
+        side_effect=[
+            AudioResult(wav_bytes=wav1, duration_sec=0.1, sample_rate=22050),
+            AudioResult(wav_bytes=wav2, duration_sec=0.1, sample_rate=22050),
+        ]
+    )
     service = ConversationService(tts_service=mock_tts)
 
     result = await service.generate(
@@ -135,7 +149,9 @@ async def test_conversations_endpoint_success(async_client):
     with patch("omnivoice_api.api.v1.conversations.get_conversation_service") as mock_dep:
         mock_service = AsyncMock()
         mock_service.generate.return_value = AudioResult(
-            wav_bytes=_make_wav(), duration_sec=1.0, sample_rate=22050,
+            wav_bytes=_make_wav(),
+            duration_sec=1.0,
+            sample_rate=22050,
         )
         mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)
         mock_dep.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -220,7 +236,9 @@ async def test_conversations_endpoint_custom_pause(async_client):
 
     mock_service = AsyncMock()
     mock_service.generate.return_value = AudioResult(
-        wav_bytes=_make_wav(), duration_sec=1.0, sample_rate=22050,
+        wav_bytes=_make_wav(),
+        duration_sec=1.0,
+        sample_rate=22050,
     )
     app.dependency_overrides[get_conversation_service] = lambda: mock_service
     try:

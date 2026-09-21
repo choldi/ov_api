@@ -78,7 +78,9 @@ def test_cache_eviction(cache: EmbeddingCache, tmp_path: Path) -> None:
         assert cache.get(audio) is not None
 
 
-def test_cache_invalidation(cache: EmbeddingCache, sample_audio: Path, sample_embedding: np.ndarray) -> None:
+def test_cache_invalidation(
+    cache: EmbeddingCache, sample_audio: Path, sample_embedding: np.ndarray
+) -> None:
     """Test de invalidación de entrada."""
     cache.put(sample_audio, sample_embedding)
     assert cache.size == 1
@@ -97,7 +99,9 @@ def test_cache_invalidation_nonexistent(cache: EmbeddingCache, tmp_path: Path) -
     assert removed is False
 
 
-def test_cache_clear(cache: EmbeddingCache, sample_audio: Path, sample_embedding: np.ndarray) -> None:
+def test_cache_clear(
+    cache: EmbeddingCache, sample_audio: Path, sample_embedding: np.ndarray
+) -> None:
     """Test de limpieza completa del caché."""
     cache.put(sample_audio, sample_embedding)
     assert cache.size == 1
@@ -141,7 +145,9 @@ def test_cache_lru_order(cache: EmbeddingCache, tmp_path: Path) -> None:
     assert cache.get(audio_1) is None  # Evictado
 
 
-def test_cache_stats(cache: EmbeddingCache, sample_audio: Path, sample_embedding: np.ndarray) -> None:
+def test_cache_stats(
+    cache: EmbeddingCache, sample_audio: Path, sample_embedding: np.ndarray
+) -> None:
     """Test de estadísticas del caché."""
     stats = cache.stats
     assert stats["size"] == 0

@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch, AsyncMock
-
 import pytest
 
+from omnivoice_api.core.exceptions import (
+    UnsupportedInstructError,
+    VoiceNotFoundError,
+)
 from omnivoice_api.core.omnivoice_engine import (
-    OmniVoiceEngine,
-    GenerationParams,
+    STOCK_VOICE_INSTRUCTS,
     SUPPORTED_EMOTIONS,
     VALID_INSTRUCT_TOKENS_EN,
-    STOCK_VOICE_INSTRUCTS,
+    GenerationParams,
+    OmniVoiceEngine,
     _apply_emotion,
     _map_language,
     _validate_instruct,
-    get_engine,
     close_engine,
-)
-from omnivoice_api.core.exceptions import (
-    EngineUnavailableError,
-    UnsupportedInstructError,
-    VoiceNotFoundError,
+    get_engine,
 )
 
 
@@ -31,6 +28,7 @@ def reset_engine():
     OmniVoiceEngine._instance = None
     OmniVoiceEngine._initialized = False
     import omnivoice_api.core.omnivoice_engine as mod
+
     mod._engine_instance = None
     yield
     OmniVoiceEngine._instance = None
@@ -157,6 +155,7 @@ async def test_engine_generate_mock_wav(engine: OmniVoiceEngine) -> None:
 
 # --- Validación de instructs ---
 
+
 def test_validate_instruct_valid():
     _validate_instruct("male, british accent")
 
@@ -177,7 +176,7 @@ def test_validate_instruct_mixed_valid_invalid():
 
 def test_all_stock_voice_instructs_are_valid():
     """Todos los instructs de STOCK_VOICE_INSTRUCTS deben contener solo tokens válidos."""
-    for voice_id, instruct in STOCK_VOICE_INSTRUCTS.items():
+    for _voice_id, instruct in STOCK_VOICE_INSTRUCTS.items():
         _validate_instruct(instruct)  # Should not raise
 
 
@@ -191,6 +190,7 @@ def test_valid_tokens_complete():
 
 
 # --- GenerationParams ---
+
 
 def test_generation_params_defaults():
     p = GenerationParams()
@@ -220,6 +220,7 @@ async def test_close_engine() -> None:
     await get_engine()
     await close_engine()
     import omnivoice_api.core.omnivoice_engine as mod
+
     assert mod._engine_instance is None
 
 
@@ -229,6 +230,7 @@ async def test_close_engine_when_none() -> None:
 
 
 # --- Emotion tag tests ---
+
 
 def test_apply_emotion_basic():
     assert _apply_emotion("Hello!", "happy") == "[happy] Hello!"
@@ -262,6 +264,7 @@ def test_apply_emotion_singing():
 
 # --- Language mapping tests ---
 
+
 def test_map_language_known():
     assert _map_language("es") == "Spanish"
     assert _map_language("en") == "English"
@@ -278,6 +281,7 @@ def test_map_language_unknown():
 
 
 # --- Engine synthesize with emotion ---
+
 
 @pytest.mark.asyncio
 async def test_engine_synthesize_stock_with_emotion(engine: OmniVoiceEngine) -> None:
@@ -324,6 +328,7 @@ async def test_engine_synthesize_clone_with_emotion(engine: OmniVoiceEngine) -> 
 
 
 # --- Spanish accent validation ---
+
 
 def test_spanish_accent_in_valid_tokens():
     assert "spanish accent" in VALID_INSTRUCT_TOKENS_EN

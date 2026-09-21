@@ -7,15 +7,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
+from omnivoice_api.api.v1.tts import get_tts_service
 from omnivoice_api.core.engine_client import AudioResult
 from omnivoice_api.core.exceptions import (
-    EngineUnavailableError,
     UnsupportedInstructError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
 from omnivoice_api.main import app
-from omnivoice_api.api.v1.tts import get_tts_service
 
 
 def _make_wav() -> bytes:
@@ -31,7 +30,9 @@ async def test_tts_stock_success(async_client: AsyncClient) -> None:
     with patch("omnivoice_api.api.v1.tts.get_tts_service") as mock_dep:
         mock_service = AsyncMock()
         mock_service.synthesize_stock.return_value = AudioResult(
-            wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+            wav_bytes=_make_wav(),
+            duration_sec=0.5,
+            sample_rate=22050,
         )
         mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)
         mock_dep.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -48,14 +49,21 @@ async def test_tts_instruct_success(async_client: AsyncClient) -> None:
     with patch("omnivoice_api.api.v1.tts.get_tts_service") as mock_dep:
         mock_service = AsyncMock()
         mock_service.synthesize_instruct.return_value = AudioResult(
-            wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+            wav_bytes=_make_wav(),
+            duration_sec=0.5,
+            sample_rate=22050,
         )
         mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)
         mock_dep.return_value.__aexit__ = AsyncMock(return_value=False)
 
         resp = await async_client.post(
             "/api/v1/tts",
-            json={"text": "Hello", "voice_id": "es-mx-male", "language": "en", "instruct": "female, british accent"},
+            json={
+                "text": "Hello",
+                "voice_id": "es-mx-male",
+                "language": "en",
+                "instruct": "female, british accent",
+            },
         )
         assert resp.status_code == 200
 
@@ -79,11 +87,13 @@ async def test_tts_voice_not_found(async_client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_tts_unsupported_language(async_client: AsyncClient) -> None:
-    with patch("omnivoice_api.api.v1.tts.TtsService") as MockService:
+    with patch("omnivoice_api.api.v1.tts.TtsService") as mock_service_cls:
         mock_service = AsyncMock()
-        mock_service.synthesize_stock = AsyncMock(side_effect=UnsupportedLanguageError("xx", ["es", "en"]))
+        mock_service.synthesize_stock = AsyncMock(
+            side_effect=UnsupportedLanguageError("xx", ["es", "en"])
+        )
         mock_service.close = AsyncMock()
-        MockService.return_value = mock_service
+        mock_service_cls.return_value = mock_service
 
         resp = await async_client.post(
             "/api/v1/tts",
@@ -97,7 +107,9 @@ async def test_tts_instruct_endpoint_invalid(async_client: AsyncClient) -> None:
     with patch("omnivoice_api.api.v1.tts.get_tts_service") as mock_dep:
         mock_service = AsyncMock()
         mock_service.synthesize_instruct.side_effect = UnsupportedInstructError(
-            "Mexican accent", {"mexican accent": None}, ["male", "female"],
+            "Mexican accent",
+            {"mexican accent": None},
+            ["male", "female"],
         )
         mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)
         mock_dep.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -122,12 +134,15 @@ async def test_tts_voice_design_tokens(async_client: AsyncClient) -> None:
 
 # --- Emotion tests ---
 
+
 @pytest.mark.asyncio
 async def test_tts_stock_with_emotion(async_client: AsyncClient) -> None:
     with patch("omnivoice_api.api.v1.tts.get_tts_service") as mock_dep:
         mock_service = AsyncMock()
         mock_service.synthesize_stock.return_value = AudioResult(
-            wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+            wav_bytes=_make_wav(),
+            duration_sec=0.5,
+            sample_rate=22050,
         )
         mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)
         mock_dep.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -155,14 +170,21 @@ async def test_tts_instruct_with_emotion(async_client: AsyncClient) -> None:
     with patch("omnivoice_api.api.v1.tts.get_tts_service") as mock_dep:
         mock_service = AsyncMock()
         mock_service.synthesize_instruct.return_value = AudioResult(
-            wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+            wav_bytes=_make_wav(),
+            duration_sec=0.5,
+            sample_rate=22050,
         )
         mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)
         mock_dep.return_value.__aexit__ = AsyncMock(return_value=False)
 
         resp = await async_client.post(
             "/api/v1/tts/instruct",
-            json={"text": "Hello!", "instruct": "female, british accent", "language": "en", "emotion": "singing"},
+            json={
+                "text": "Hello!",
+                "instruct": "female, british accent",
+                "language": "en",
+                "emotion": "singing",
+            },
         )
         assert resp.status_code == 200
 
@@ -171,7 +193,12 @@ async def test_tts_instruct_with_emotion(async_client: AsyncClient) -> None:
 async def test_tts_unsupported_emotion_instruct(async_client: AsyncClient) -> None:
     resp = await async_client.post(
         "/api/v1/tts/instruct",
-        json={"text": "Hello!", "instruct": "female, british accent", "language": "en", "emotion": "bored"},
+        json={
+            "text": "Hello!",
+            "instruct": "female, british accent",
+            "language": "en",
+            "emotion": "bored",
+        },
     )
     assert resp.status_code == 400
 
@@ -194,7 +221,9 @@ async def test_tts_designed_voice_via_stock_endpoint(async_client: AsyncClient) 
     """Test that a designed voice_id works through the /tts stock endpoint."""
     mock_service = AsyncMock()
     mock_service.synthesize_stock.return_value = AudioResult(
-        wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+        wav_bytes=_make_wav(),
+        duration_sec=0.5,
+        sample_rate=22050,
     )
 
     app.dependency_overrides[get_tts_service] = lambda: mock_service
@@ -214,7 +243,9 @@ async def test_tts_cloned_voice_via_stock_endpoint(async_client: AsyncClient) ->
     """Test that a cloned voice_id works through the /tts stock endpoint."""
     mock_service = AsyncMock()
     mock_service.synthesize_stock.return_value = AudioResult(
-        wav_bytes=_make_wav(), duration_sec=0.5, sample_rate=22050,
+        wav_bytes=_make_wav(),
+        duration_sec=0.5,
+        sample_rate=22050,
     )
 
     app.dependency_overrides[get_tts_service] = lambda: mock_service

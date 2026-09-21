@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -21,15 +21,13 @@ from omnivoice_api.services.voice_service import VoiceService
 @pytest.fixture
 def mock_repository() -> AsyncMock:
     """Repositorio mockeado."""
-    repo = AsyncMock(spec=VoiceRepository)
-    return repo
+    return AsyncMock(spec=VoiceRepository)
 
 
 @pytest.fixture
 def mock_audio_validator() -> AsyncMock:
     """Validador de audio mockeado."""
-    validator = AsyncMock(spec=AudioValidator)
-    return validator
+    return AsyncMock(spec=AudioValidator)
 
 
 @pytest.fixture
@@ -39,16 +37,17 @@ def voice_service(mock_repository: AsyncMock, mock_audio_validator: AsyncMock) -
         mock_settings.return_value.omnilang_list = ["es", "en", "zh"]
         mock_settings.return_value.MAX_REFERENCE_DURATION_SEC = 30.0
         mock_settings.return_value.VOICES_DIR = Path("/tmp/test_voices")
-        service = VoiceService(
+        return VoiceService(
             repository=mock_repository,
             audio_validator=mock_audio_validator,
             embedding_cache=AsyncMock(),
         )
-        return service
 
 
 @pytest.mark.asyncio
-async def test_clone_voice_success(voice_service: VoiceService, mock_repository: AsyncMock, mock_audio_validator: AsyncMock) -> None:
+async def test_clone_voice_success(
+    voice_service: VoiceService, mock_repository: AsyncMock, mock_audio_validator: AsyncMock
+) -> None:
     """Test de clonación exitosa."""
     mock_audio_validator.validate_and_prepare.return_value = (
         Path("/tmp/processed.wav"),
@@ -56,7 +55,7 @@ async def test_clone_voice_success(voice_service: VoiceService, mock_repository:
     )
     mock_repository.create.return_value = str(uuid4())
 
-    with patch("omnivoice_api.services.voice_service.shutil") as mock_shutil:
+    with patch("omnivoice_api.services.voice_service.shutil"):
         voice_id = await voice_service.clone_voice(
             name="test-voice",
             language="es",
@@ -78,7 +77,9 @@ async def test_clone_voice_unsupported_language(voice_service: VoiceService) -> 
 
 
 @pytest.mark.asyncio
-async def test_clone_voice_invalid_audio(voice_service: VoiceService, mock_audio_validator: AsyncMock) -> None:
+async def test_clone_voice_invalid_audio(
+    voice_service: VoiceService, mock_audio_validator: AsyncMock
+) -> None:
     """Test de error con audio inválido."""
     mock_audio_validator.validate_and_prepare.side_effect = InvalidReferenceAudioError("Bad audio")
     with pytest.raises(InvalidReferenceAudioError):
@@ -156,7 +157,9 @@ async def test_initialize_idempotent() -> None:
         mock_repo = AsyncMock(spec=VoiceRepository)
         mock_validator = AsyncMock(spec=AudioValidator)
         mock_cache = AsyncMock()
-        service = VoiceService(repository=mock_repo, audio_validator=mock_validator, embedding_cache=mock_cache)
+        service = VoiceService(
+            repository=mock_repo, audio_validator=mock_validator, embedding_cache=mock_cache
+        )
         await service.initialize()
         # Should not replace already-injected dependencies
         assert service._repository is mock_repo
