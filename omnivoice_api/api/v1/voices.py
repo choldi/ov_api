@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, status, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from omnivoice_api.core.engine_client import OmniVoiceEngineClient, StockVoice
 from omnivoice_api.core.exceptions import (
@@ -15,9 +13,7 @@ from omnivoice_api.core.exceptions import (
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
-from omnivoice_api.repositories.voice_repository import VoiceRepository
 from omnivoice_api.services.voice_service import VoiceService
-from omnivoice_api.settings import get_settings
 
 router = APIRouter(prefix="/voices", tags=["voices"])
 
@@ -56,8 +52,7 @@ async def list_stock_voices(
     language: str | None = Query(None, description="Filtrar por idioma (ISO 639-1)"),
     engine_client: OmniVoiceEngineClient = Depends(get_engine_client),
 ) -> list[StockVoice]:
-    voices = await engine_client.list_stock_voices(language)
-    return voices
+    return await engine_client.list_stock_voices(language)
 
 
 @router.post(
@@ -73,24 +68,30 @@ async def list_stock_voices(
 async def clone_voice(
     name: str = Form(..., description="Nombre único para la voz clonada"),
     language: str = Form(..., description="Idioma del audio de referencia (ISO 639-1)"),
-    reference_audio: UploadFile = File(..., description="Archivo de audio de referencia (WAV, FLAC)"),
-    ref_text: str | None = Form(None, description="Transcripción del audio de referencia (mejora calidad del clonado)"),
+    reference_audio: UploadFile = File(
+        ..., description="Archivo de audio de referencia (WAV, FLAC)"
+    ),
+    ref_text: str | None = Form(
+        None, description="Transcripción del audio de referencia (mejora calidad del clonado)"
+    ),
     voice_service: VoiceService = Depends(get_voice_service),
 ) -> dict:
     # Validate file type
     if not reference_audio.filename:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Nombre de archivo requerido"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Nombre de archivo requerido"
         )
-    
+
     # Save uploaded file temporarily
     import tempfile
-    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(reference_audio.filename).suffix) as tmp_file:
+
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=Path(reference_audio.filename).suffix
+    ) as tmp_file:
         content = await reference_audio.read()
         tmp_file.write(content)
         tmp_file_path = Path(tmp_file.name)
-    
+
     try:
         # Clone the voice
         voice_id = await voice_service.clone_voice(
@@ -99,34 +100,27 @@ async def clone_voice(
             reference_audio_path=tmp_file_path,
             ref_text=ref_text,
         )
-        
+
         return {
             "voice_id": voice_id,
             "name": name,
             "language": language,
-            "message": f"Voz '{name}' clonada exitosamente"
+            "message": f"Voz '{name}' clonada exitosamente",
         }
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except (UnsupportedLanguageError, InvalidReferenceAudioError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error interno: {str(e)}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error interno: {e!s}"
+        ) from e
     finally:
         # Clean up temporary file
         tmp_file_path.unlink(missing_ok=True)
 
 
-@router.get("/cloned", response_model=List[dict])
+@router.get("/cloned", response_model=list[dict])
 async def list_cloned_voices(
     language: str | None = Query(None, description="Filtrar por idioma (ISO 639-1)"),
     limit: int = Query(100, ge=1, le=1000, description="Límite de resultados"),
@@ -135,7 +129,7 @@ async def list_cloned_voices(
 ) -> list[dict]:
     """
     Lista las voces clonadas disponibles.
-    
+
     - **language**: Filtrar por idioma (ISO 639-1)
     - **limit**: Número máximo de resultados (1-1000)
     - **offset**: Desplazamiento para paginación
@@ -150,16 +144,15 @@ async def get_cloned_voice(
 ) -> dict:
     """
     Obtiene una voz clonada específica por su ID.
-    
+
     - **voice_id**: UUID de la voz clonada
     """
     try:
         return await voice_service.get_voice(voice_id)
     except VoiceNotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Voz clonada no encontrada: {e.voice_id}"
-        )
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Voz clonada no encontrada: {e.voice_id}"
+        ) from e
 
 
 @router.delete("/cloned/{voice_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -177,13 +170,12 @@ async def delete_cloned_voice(
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Voz clonada no encontrada: {voice_id}"
+                detail=f"Voz clonada no encontrada: {voice_id}",
             )
     except VoiceNotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Voz clonada no encontrada: {e.voice_id}"
-        )
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Voz clonada no encontrada: {e.voice_id}"
+        ) from e
 
 
 # --- Designed voices (instruct-based presets) ---
@@ -201,7 +193,9 @@ async def delete_cloned_voice(
 )
 async def create_designed_voice(
     name: str = Body(..., description="Nombre único para la voz"),
-    instruct: str = Body(..., description="Instruct de voice design (ej: 'female, young adult, british accent')"),
+    instruct: str = Body(
+        ..., description="Instruct de voice design (ej: 'female, young adult, british accent')"
+    ),
     language: str = Body(..., description="Idioma principal (ISO 639-1)"),
     voice_service: VoiceService = Depends(get_voice_service),
 ) -> dict:
@@ -222,12 +216,12 @@ async def create_designed_voice(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e),
-        )
+        ) from e
     except UnsupportedLanguageError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
-        )
+        ) from e
     except UnsupportedInstructError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -235,12 +229,11 @@ async def create_designed_voice(
                 "detail": str(e),
                 "error_type": "unsupported_instruct",
                 "invalid_items": [
-                    {"token": token, "suggestion": sug}
-                    for token, sug in e.invalid_items.items()
+                    {"token": token, "suggestion": sug} for token, sug in e.invalid_items.items()
                 ],
                 "valid_tokens": e.valid_items,
             },
-        )
+        ) from e
 
 
 @router.get(
@@ -256,7 +249,9 @@ async def list_designed_voices(
     voice_service: VoiceService = Depends(get_voice_service),
 ) -> list[dict]:
     return await voice_service.list_designed_voices(
-        language=language, limit=limit, offset=offset,
+        language=language,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -275,7 +270,7 @@ async def get_designed_voice(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Voz diseñada no encontrada: {e.voice_id}",
-        )
+        ) from e
 
 
 @router.delete(
@@ -298,4 +293,4 @@ async def delete_designed_voice(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Voz diseñada no encontrada: {e.voice_id}",
-        )
+        ) from e

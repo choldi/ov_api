@@ -45,9 +45,7 @@ def start_cleanup_task(outputs_dir: Path, ttl_seconds: int = 3600) -> None:
     """Inicia la tarea de limpieza en background."""
     global _background_task
     if _background_task is None or _background_task.done():
-        _background_task = asyncio.create_task(
-            cleanup_expired_outputs(outputs_dir, ttl_seconds)
-        )
+        _background_task = asyncio.create_task(cleanup_expired_outputs(outputs_dir, ttl_seconds))
         logger.info("Cleanup task iniciada (ttl=%ds, dir=%s)", ttl_seconds, outputs_dir)
 
 

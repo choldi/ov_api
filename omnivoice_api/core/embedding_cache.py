@@ -30,7 +30,7 @@ class EmbeddingCache:
     def _file_hash(audio_path: Path | str) -> str:
         """Compute SHA-256 hash of file contents."""
         h = hashlib.sha256()
-        with open(audio_path, "rb") as f:
+        with Path(audio_path).open("rb") as f:
             for chunk in iter(lambda: f.read(8192), b""):
                 h.update(chunk)
         return h.hexdigest()
@@ -57,7 +57,7 @@ class EmbeddingCache:
                 self._cache[key] = embedding
                 return
             if len(self._cache) >= self._maxsize:
-                evicted_key, _ = self._cache.popitem(last=False)
+                _evicted_key, _ = self._cache.popitem(last=False)
                 logger.debug("EmbeddingCache evicted entry (size={})", len(self._cache))
             self._cache[key] = embedding
 

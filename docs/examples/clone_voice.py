@@ -64,7 +64,7 @@ async def synthesize_with_cloned(
     output_path: Path,
 ) -> None:
     """Synthesize speech using a cloned voice."""
-    print(f"\n--- Synthesizing with cloned voice ---")
+    print("\n--- Synthesizing with cloned voice ---")
     print(f"Text: {text!r}")
     response = await client.post(
         f"{API_BASE}/tts",

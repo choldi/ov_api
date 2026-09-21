@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import uuid
 from pathlib import Path
-from typing import Optional
 
-import soundfile as sf
 from loguru import logger
 
 from omnivoice_api.core.audio import AudioValidator
 from omnivoice_api.core.embedding_cache import EmbeddingCache, get_embedding_cache
 from omnivoice_api.core.exceptions import (
     InvalidReferenceAudioError,
-    UnsupportedInstructError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
@@ -60,15 +58,15 @@ class VoiceService:
         ref_text: str | None = None,
     ) -> str:
         """Clone a voice from reference audio.
-        
+
         Args:
             name: Unique name for the cloned voice
             language: Language code (ISO 639-1)
             reference_audio_path: Path to the reference audio file
-            
+
         Returns:
             str: The UUID of the cloned voice
-            
+
         Raises:
             ValueError: If voice name already exists
             UnsupportedLanguageError: If language is not supported
@@ -77,28 +75,29 @@ class VoiceService:
         # Validate language
         if language not in self._settings.omnilang_list:
             raise UnsupportedLanguageError(language, self._settings.omnilang_list)
-        
+
         # Validate and prepare reference audio
         validated_path, duration_sec = await self._audio_validator.validate_and_prepare(
             reference_audio_path, language
         )
-        
+
         # Check max duration
         if duration_sec > self._settings.MAX_REFERENCE_DURATION_SEC:
             raise InvalidReferenceAudioError(
-                f"Reference audio too long: {duration_sec:.1f}s > {self._settings.MAX_REFERENCE_DURATION_SEC}s"
+                f"Reference audio too long: {duration_sec:.1f}s > "
+                f"{self._settings.MAX_REFERENCE_DURATION_SEC}s"
             )
-        
+
         # Copy to permanent storage
         voices_dir = self._settings.VOICES_DIR
         voices_dir.mkdir(parents=True, exist_ok=True)
-        
+
         voice_id = str(uuid.uuid4())
         dest_path = voices_dir / voice_id / "reference.wav"
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         shutil.copy2(validated_path, dest_path)
-        
+
         metadata = {"original_path": str(reference_audio_path)}
         if ref_text:
             metadata["ref_text"] = ref_text
@@ -111,7 +110,7 @@ class VoiceService:
             duration_sec=duration_sec,
             metadata=metadata,
         )
-        
+
         # Pre-compute and cache embedding
         try:
             # TODO: Compute actual embedding when engine supports it
@@ -119,7 +118,7 @@ class VoiceService:
             self._embedding_cache.invalidate(dest_path)
         except Exception as e:
             logger.warning(f"Failed to precompute embedding for {voice_id}: {e}")
-        
+
         logger.info(f"Voice cloned successfully: {name} ({voice_id})")
         return voice_id
 
@@ -128,10 +127,7 @@ class VoiceService:
         return await self._repository.get_by_id(voice_id)
 
     async def list_voices(
-        self, 
-        language: str | None = None,
-        limit: int = 100,
-        offset: int = 0
+        self, language: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[dict]:
         """List cloned voices with optional filtering."""
         return await self._repository.list(language=language, limit=limit, offset=offset)
@@ -153,10 +149,8 @@ class VoiceService:
 
         # Invalidate cache using the reference audio path
         if deleted and ref_path is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._embedding_cache.invalidate(ref_path)
-            except Exception:
-                pass
 
         return deleted
 
@@ -206,7 +200,9 @@ class VoiceService:
     ) -> list[dict]:
         """List designed voices with optional filtering."""
         return await self._repository.list_designed_voices(
-            language=language, limit=limit, offset=offset,
+            language=language,
+            limit=limit,
+            offset=offset,
         )
 
     async def delete_designed_voice(self, voice_id: str) -> bool:

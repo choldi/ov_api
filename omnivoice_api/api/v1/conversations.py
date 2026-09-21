@@ -18,6 +18,7 @@ from omnivoice_api.services.tts import TtsService
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 WAV_CHUNK_SIZE = 64 * 1024  # 64 KB chunks for streaming
+MIN_CONVERSATION_TURNS = 2
 
 
 def _stream_wav(wav_bytes: bytes, chunk_size: int = WAV_CHUNK_SIZE):
@@ -43,16 +44,20 @@ async def get_conversation_service() -> ConversationService:
     response_class=Response,
     summary="Generar conversación multi-voz",
     description=(
-        "Genera audio de una conversación entre dos o más voces. "
-        "Cada turno especifica una voz, texto e idioma. Los turnos se concatenan con silencios configurables. "
-        "Soporta voces stock, clonadas y diseñadas."
+        "Genera audio de una conversación entre dos o más voces. Cada "
+        "turno especifica una voz, texto e idioma. Los turnos se concatenan "
+        "con silencios configurables. Soporta voces stock, clonadas y "
+        "diseñadas."
     ),
 )
 async def generate_conversation(
     turns: Annotated[
         list[dict],
         Body(
-            description="Lista de turnos. Cada turno tiene 'voice_id', 'text' y opcionalmente 'language'. Mínimo 2 turnos.",
+            description=(
+                "Lista de turnos. Cada turno tiene 'voice_id', 'text' y "
+                "opcionalmente 'language'. Mínimo 2 turnos."
+            ),
             examples=[
                 [
                     {"voice_id": "es-mx-male", "text": "Hola, ¿cómo estás?", "language": "es"},
@@ -70,7 +75,7 @@ async def generate_conversation(
 ) -> Response:
     """Genera audio de una conversación multi-voz."""
     try:
-        if not turns or len(turns) < 2:
+        if not turns or len(turns) < MIN_CONVERSATION_TURNS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
@@ -85,7 +90,7 @@ async def generate_conversation(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={
-                        "detail": f"El turno {i+1} debe tener 'voice_id' y 'text'",
+                        "detail": f"El turno {i + 1} debe tener 'voice_id' y 'text'",
                         "error_type": "validation_error",
                     },
                 )
@@ -93,7 +98,7 @@ async def generate_conversation(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={
-                        "detail": f"El turno {i+1} tiene texto vacío",
+                        "detail": f"El turno {i + 1} tiene texto vacío",
                         "error_type": "validation_error",
                     },
                 )

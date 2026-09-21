@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import io
 import logging
 import tempfile
 from pathlib import Path
-from typing import Any
 
 from omnivoice_api.core.engine_base import EngineCapabilities, TtsEngineBase
 from omnivoice_api.core.exceptions import (
@@ -23,30 +21,120 @@ logger = logging.getLogger(__name__)
 # Mapping from our voice_id scheme to Microsoft Edge Neural voice names
 _STOCK_VOICE_MAP: dict[str, dict[str, str]] = {
     # Spanish
-    "es-mx-male": {"ms_voice": "es-MX-JorgeNeural", "language": "es", "gender": "male", "name": "Spanish MX Male"},
-    "es-mx-female": {"ms_voice": "es-MX-DaliaNeural", "language": "es", "gender": "female", "name": "Spanish MX Female"},
-    "es-es-male": {"ms_voice": "es-ES-AlvaroNeural", "language": "es", "gender": "male", "name": "Spanish Spain Male"},
-    "es-es-female": {"ms_voice": "es-ES-ElviraNeural", "language": "es", "gender": "female", "name": "Spanish Spain Female"},
+    "es-mx-male": {
+        "ms_voice": "es-MX-JorgeNeural",
+        "language": "es",
+        "gender": "male",
+        "name": "Spanish MX Male",
+    },
+    "es-mx-female": {
+        "ms_voice": "es-MX-DaliaNeural",
+        "language": "es",
+        "gender": "female",
+        "name": "Spanish MX Female",
+    },
+    "es-es-male": {
+        "ms_voice": "es-ES-AlvaroNeural",
+        "language": "es",
+        "gender": "male",
+        "name": "Spanish Spain Male",
+    },
+    "es-es-female": {
+        "ms_voice": "es-ES-ElviraNeural",
+        "language": "es",
+        "gender": "female",
+        "name": "Spanish Spain Female",
+    },
     # Catalan
-    "ca-male": {"ms_voice": "ca-ES-EnricNeural", "language": "ca", "gender": "male", "name": "Catalan Male"},
-    "ca-female": {"ms_voice": "ca-ES-JoanaNeural", "language": "ca", "gender": "female", "name": "Catalan Female"},
+    "ca-male": {
+        "ms_voice": "ca-ES-EnricNeural",
+        "language": "ca",
+        "gender": "male",
+        "name": "Catalan Male",
+    },
+    "ca-female": {
+        "ms_voice": "ca-ES-JoanaNeural",
+        "language": "ca",
+        "gender": "female",
+        "name": "Catalan Female",
+    },
     # English
-    "en-us-male": {"ms_voice": "en-US-GuyNeural", "language": "en", "gender": "male", "name": "English US Male"},
-    "en-us-female": {"ms_voice": "en-US-JennyNeural", "language": "en", "gender": "female", "name": "English US Female"},
-    "en-gb-male": {"ms_voice": "en-GB-RyanNeural", "language": "en", "gender": "male", "name": "English UK Male"},
-    "en-gb-female": {"ms_voice": "en-GB-SoniaNeural", "language": "en", "gender": "female", "name": "English UK Female"},
+    "en-us-male": {
+        "ms_voice": "en-US-GuyNeural",
+        "language": "en",
+        "gender": "male",
+        "name": "English US Male",
+    },
+    "en-us-female": {
+        "ms_voice": "en-US-JennyNeural",
+        "language": "en",
+        "gender": "female",
+        "name": "English US Female",
+    },
+    "en-gb-male": {
+        "ms_voice": "en-GB-RyanNeural",
+        "language": "en",
+        "gender": "male",
+        "name": "English UK Male",
+    },
+    "en-gb-female": {
+        "ms_voice": "en-GB-SoniaNeural",
+        "language": "en",
+        "gender": "female",
+        "name": "English UK Female",
+    },
     # French
-    "fr-fr-male": {"ms_voice": "fr-FR-HenriNeural", "language": "fr", "gender": "male", "name": "French Male"},
-    "fr-fr-female": {"ms_voice": "fr-FR-DeniseNeural", "language": "fr", "gender": "female", "name": "French Female"},
+    "fr-fr-male": {
+        "ms_voice": "fr-FR-HenriNeural",
+        "language": "fr",
+        "gender": "male",
+        "name": "French Male",
+    },
+    "fr-fr-female": {
+        "ms_voice": "fr-FR-DeniseNeural",
+        "language": "fr",
+        "gender": "female",
+        "name": "French Female",
+    },
     # German
-    "de-de-male": {"ms_voice": "de-DE-ConradNeural", "language": "de", "gender": "male", "name": "German Male"},
-    "de-de-female": {"ms_voice": "de-DE-KatjaNeural", "language": "de", "gender": "female", "name": "German Female"},
+    "de-de-male": {
+        "ms_voice": "de-DE-ConradNeural",
+        "language": "de",
+        "gender": "male",
+        "name": "German Male",
+    },
+    "de-de-female": {
+        "ms_voice": "de-DE-KatjaNeural",
+        "language": "de",
+        "gender": "female",
+        "name": "German Female",
+    },
     # Italian
-    "it-it-male": {"ms_voice": "it-IT-DiegoNeural", "language": "it", "gender": "male", "name": "Italian Male"},
-    "it-it-female": {"ms_voice": "it-IT-ElsaNeural", "language": "it", "gender": "female", "name": "Italian Female"},
+    "it-it-male": {
+        "ms_voice": "it-IT-DiegoNeural",
+        "language": "it",
+        "gender": "male",
+        "name": "Italian Male",
+    },
+    "it-it-female": {
+        "ms_voice": "it-IT-ElsaNeural",
+        "language": "it",
+        "gender": "female",
+        "name": "Italian Female",
+    },
     # Portuguese
-    "pt-br-male": {"ms_voice": "pt-BR-AntonioNeural", "language": "pt", "gender": "male", "name": "Portuguese BR Male"},
-    "pt-br-female": {"ms_voice": "pt-BR-FranciscaNeural", "language": "pt", "gender": "female", "name": "Portuguese BR Female"},
+    "pt-br-male": {
+        "ms_voice": "pt-BR-AntonioNeural",
+        "language": "pt",
+        "gender": "male",
+        "name": "Portuguese BR Male",
+    },
+    "pt-br-female": {
+        "ms_voice": "pt-BR-FranciscaNeural",
+        "language": "pt",
+        "gender": "female",
+        "name": "Portuguese BR Female",
+    },
 }
 
 _EDGETTS_LANGUAGES = {"es", "en", "fr", "de", "it", "pt", "ca"}
@@ -76,11 +164,12 @@ class EdgeTTSEngine(TtsEngineBase):
     async def initialize(self) -> None:
         try:
             import edge_tts  # noqa: F401
+
             logger.info("EdgeTTS engine initialized (cloud, no local model)")
         except ImportError:
             raise EngineUnavailableError(
                 "edge-tts no está instalado. Ejecuta: pip install edge-tts"
-            )
+            ) from None
 
     async def synthesize(
         self,
@@ -161,7 +250,7 @@ class EdgeTTSEngine(TtsEngineBase):
             await communicate.save(tmp_path)
             return self._mp3_to_wav(Path(tmp_path))
         except Exception as e:
-            raise EngineUnavailableError(f"Error en EdgeTTS: {e}")
+            raise EngineUnavailableError(f"Error en EdgeTTS: {e}") from e
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 

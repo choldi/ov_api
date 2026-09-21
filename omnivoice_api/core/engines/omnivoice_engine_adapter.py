@@ -8,8 +8,6 @@ from omnivoice_api.core.engine_base import EngineCapabilities, TtsEngineBase
 from omnivoice_api.core.omnivoice_engine import (
     OmniVoiceEngine,
     get_engine,
-    SUPPORTED_EMOTIONS,
-    STOCK_VOICE_INSTRUCTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,5 +105,6 @@ class OmniVoiceAdapter(TtsEngineBase):
 
     async def close(self) -> None:
         from omnivoice_api.core.omnivoice_engine import close_engine
+
         await close_engine()
         self._engine = None

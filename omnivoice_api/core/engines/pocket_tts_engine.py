@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import struct
 import wave
+from pathlib import Path
 from typing import Any
 
 from omnivoice_api.core.engine_base import EngineCapabilities, TtsEngineBase
@@ -30,16 +30,61 @@ _POCKET_VOICE_PRESETS: dict[str, str] = {
 
 # Mapping from our voice_id scheme to Pocket TTS voice presets
 _STOCK_VOICE_MAP: dict[str, dict[str, str]] = {
-    "es-mx-male": {"preset": "giovanni", "language": "es", "gender": "male", "name": "Spanish MX Male"},
-    "es-mx-female": {"preset": "lola", "language": "es", "gender": "female", "name": "Spanish MX Female"},
-    "es-es-male": {"preset": "giovanni", "language": "es", "gender": "male", "name": "Spanish Spain Male"},
-    "es-es-female": {"preset": "lola", "language": "es", "gender": "female", "name": "Spanish Spain Female"},
-    "en-us-male": {"preset": "giovanni", "language": "en", "gender": "male", "name": "English US Male"},
-    "en-us-female": {"preset": "anna", "language": "en", "gender": "female", "name": "English US Female"},
-    "en-gb-male": {"preset": "giovanni", "language": "en", "gender": "male", "name": "English UK Male"},
-    "en-gb-female": {"preset": "alba", "language": "en", "gender": "female", "name": "English UK Female"},
+    "es-mx-male": {
+        "preset": "giovanni",
+        "language": "es",
+        "gender": "male",
+        "name": "Spanish MX Male",
+    },
+    "es-mx-female": {
+        "preset": "lola",
+        "language": "es",
+        "gender": "female",
+        "name": "Spanish MX Female",
+    },
+    "es-es-male": {
+        "preset": "giovanni",
+        "language": "es",
+        "gender": "male",
+        "name": "Spanish Spain Male",
+    },
+    "es-es-female": {
+        "preset": "lola",
+        "language": "es",
+        "gender": "female",
+        "name": "Spanish Spain Female",
+    },
+    "en-us-male": {
+        "preset": "giovanni",
+        "language": "en",
+        "gender": "male",
+        "name": "English US Male",
+    },
+    "en-us-female": {
+        "preset": "anna",
+        "language": "en",
+        "gender": "female",
+        "name": "English US Female",
+    },
+    "en-gb-male": {
+        "preset": "giovanni",
+        "language": "en",
+        "gender": "male",
+        "name": "English UK Male",
+    },
+    "en-gb-female": {
+        "preset": "alba",
+        "language": "en",
+        "gender": "female",
+        "name": "English UK Female",
+    },
     "fr-fr-male": {"preset": "giovanni", "language": "fr", "gender": "male", "name": "French Male"},
-    "fr-fr-female": {"preset": "alba", "language": "fr", "gender": "female", "name": "French Female"},
+    "fr-fr-female": {
+        "preset": "alba",
+        "language": "fr",
+        "gender": "female",
+        "name": "French Female",
+    },
 }
 
 # Languages Pocket TTS supports
@@ -75,7 +120,9 @@ class PocketTTSEngine(TtsEngineBase):
         try:
             from pocket_tts import TTSModel
 
-            logger.info("Initializing Pocket TTS engine (model=%s)...", self._settings.POCKET_TTS_MODEL)
+            logger.info(
+                "Initializing Pocket TTS engine (model=%s)...", self._settings.POCKET_TTS_MODEL
+            )
             self._model = await asyncio.to_thread(TTSModel.load_model)
             # Pre-load voice states for stock presets
             for preset_name in _POCKET_VOICE_PRESETS:
@@ -90,9 +137,9 @@ class PocketTTSEngine(TtsEngineBase):
         except ImportError:
             raise EngineUnavailableError(
                 "pocket-tts no está instalado. Ejecuta: pip install pocket-tts"
-            )
+            ) from None
         except Exception as e:
-            raise EngineUnavailableError(f"Error inicializando Pocket TTS: {e}")
+            raise EngineUnavailableError(f"Error inicializando Pocket TTS: {e}") from e
 
     async def synthesize(
         self,
@@ -119,12 +166,10 @@ class PocketTTSEngine(TtsEngineBase):
             raise EngineUnavailableError(f"Voice preset '{preset}' no cargado")
 
         try:
-            audio = await asyncio.to_thread(
-                self._model.generate_audio, state, text
-            )
+            audio = await asyncio.to_thread(self._model.generate_audio, state, text)
             return self._tensor_to_wav(audio)
         except Exception as e:
-            raise EngineUnavailableError(f"Error sintetizando con Pocket TTS: {e}")
+            raise EngineUnavailableError(f"Error sintetizando con Pocket TTS: {e}") from e
 
     async def synthesize_clone(
         self,
@@ -135,21 +180,17 @@ class PocketTTSEngine(TtsEngineBase):
         speed: float = 1.0,
         ref_text: str | None = None,
     ) -> bytes:
-        import os
-
-        if not os.path.exists(reference_audio_path):
+        if not Path(reference_audio_path).exists():
             raise EngineUnavailableError(f"Reference audio no encontrado: {reference_audio_path}")
 
         try:
             state = await asyncio.to_thread(
                 self._model.get_state_for_audio_prompt, reference_audio_path
             )
-            audio = await asyncio.to_thread(
-                self._model.generate_audio, state, text
-            )
+            audio = await asyncio.to_thread(self._model.generate_audio, state, text)
             return self._tensor_to_wav(audio)
         except Exception as e:
-            raise EngineUnavailableError(f"Error clonando voz con Pocket TTS: {e}")
+            raise EngineUnavailableError(f"Error clonando voz con Pocket TTS: {e}") from e
 
     async def synthesize_instruct(
         self,

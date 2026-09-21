@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 import uuid
+from typing import ClassVar
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -31,10 +33,18 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
     Si settings.API_KEY está vacío, todas las peticiones pasan sin autenticación.
     Si tiene un valor, se requiere el header `X-API-Key` o query param `api_key`.
-    Los endpoints /docs, /redoc, /openapi.json, /metrics, /api/v1/health* y /api/v1/disk siempre son públicos.
+    Los endpoints públicos (sin auth): /docs, /redoc, /openapi.json, /metrics,
+    /api/v1/health* y /api/v1/disk.
     """
 
-    PUBLIC_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/metrics", "/api/v1/disk"}
+    PUBLIC_PATHS: ClassVar[set[str]] = {
+        "/",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/metrics",
+        "/api/v1/disk",
+    }
 
     def __init__(self, app, api_key: str = "") -> None:
         super().__init__(app)

@@ -8,17 +8,17 @@ import logging
 import math
 import struct
 import wave
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import torch
 
-from omnivoice_api.settings import get_settings
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
     UnsupportedInstructError,
     VoiceNotFoundError,
 )
+from omnivoice_api.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +26,49 @@ logger = logging.getLogger(__name__)
 # --- Tokens válidos para instructs de OmniVoice ---
 # El modelo SOLO acepta estos tokens exactos (en inglés o chino).
 VALID_INSTRUCT_TOKENS_EN: list[str] = [
-    "male", "female",
-    "child", "teenager", "young adult", "middle-aged", "elderly",
-    "very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch",
+    "male",
+    "female",
+    "child",
+    "teenager",
+    "young adult",
+    "middle-aged",
+    "elderly",
+    "very low pitch",
+    "low pitch",
+    "moderate pitch",
+    "high pitch",
+    "very high pitch",
     "whisper",
-    "american accent", "australian accent", "british accent", "canadian accent",
-    "chinese accent", "indian accent", "japanese accent", "korean accent",
-    "portuguese accent", "russian accent", "spanish accent",
+    "american accent",
+    "australian accent",
+    "british accent",
+    "canadian accent",
+    "chinese accent",
+    "indian accent",
+    "japanese accent",
+    "korean accent",
+    "portuguese accent",
+    "russian accent",
+    "spanish accent",
 ]
 
 # --- Emotion tags (ModelsLab/omnivoice-singing) ---
 # Se aplican como prefijos de texto: "[happy] Hello!" → modelo genera con emoción.
 SUPPORTED_EMOTIONS: list[str] = [
-    "happy", "sad", "angry", "excited", "calm", "nervous", "whisper", "singing",
+    "happy",
+    "sad",
+    "angry",
+    "excited",
+    "calm",
+    "nervous",
+    "whisper",
+    "singing",
 ]
+
+# Memoria libre mínima (MB) requerida al validar un dispositivo CUDA.
+_MIN_CUDA_FREE_MB = 100
+# guidance_scale por defecto y el que se usa al solicitar una emoción.
+_GUIDANCE_SCALE_DEFAULT = 2.0
 
 # Mapeo de emociones a tags del modelo (formato [tag]).
 _EMOTION_TAG_MAP: dict[str, str] = {
@@ -79,14 +108,33 @@ STOCK_VOICE_INSTRUCTS: dict[str, str] = {
     "ko-kr-female": "female, korean accent",
 }
 
-# Tokens chinos válidos (full-width comma `，` para separar).
+# Tokens chinos válidos (separados por coma full-width).
 VALID_INSTRUCT_TOKENS_ZH: list[str] = [
-    "男", "女",
-    "儿童", "少年", "青年", "中年", "老年",
-    "极低音调", "低音调", "中音调", "高音调", "极高音调",
+    "男",
+    "女",
+    "儿童",
+    "少年",
+    "青年",
+    "中年",
+    "老年",
+    "极低音调",
+    "低音调",
+    "中音调",
+    "高音调",
+    "极高音调",
     "耳语",
-    "河南话", "陕西话", "四川话", "贵州话", "云南话", "桂林话",
-    "济南话", "石家庄话", "甘肃话", "宁夏话", "青岛话", "东北话",
+    "河南话",
+    "陕西话",
+    "四川话",
+    "贵州话",
+    "云南话",
+    "桂林话",
+    "济南话",
+    "石家庄话",
+    "甘肃话",
+    "宁夏话",
+    "青岛话",
+    "东北话",
 ]
 
 # Mapeo de códigos ISO 639-1 a nombres de idioma completos (para model.generate(language=...))
@@ -141,7 +189,7 @@ def _validate_instruct(instruct: str) -> None:
     """Valida que el instruct contenga solo tokens soportados por el modelo."""
     tokens = [t.strip().lower() for t in instruct.split(",")]
     # Normalizar tokens chinos (full-width comma → half-width)
-    all_valid = set(t.lower() for t in VALID_INSTRUCT_TOKENS_EN) | set(VALID_INSTRUCT_TOKENS_ZH)
+    all_valid = {t.lower() for t in VALID_INSTRUCT_TOKENS_EN} | set(VALID_INSTRUCT_TOKENS_ZH)
     invalid: dict[str, str | None] = {}
 
     for token in tokens:
@@ -154,7 +202,9 @@ def _validate_instruct(instruct: str) -> None:
             invalid[token] = suggestion
 
     if invalid:
-        raise UnsupportedInstructError(instruct, invalid, list(VALID_INSTRUCT_TOKENS_EN) + VALID_INSTRUCT_TOKENS_ZH)
+        raise UnsupportedInstructError(
+            instruct, invalid, list(VALID_INSTRUCT_TOKENS_EN) + VALID_INSTRUCT_TOKENS_ZH
+        )
 
 
 @dataclass
@@ -164,6 +214,7 @@ class GenerationParams:
     Todos los campos son opcionales. Los valores por defecto coinciden con
     los de OmniVoice.
     """
+
     num_step: int = 32
     denoise: bool = True
     guidance_scale: float = 2.0
@@ -203,8 +254,7 @@ class OmniVoiceEngineInterface(Protocol):
         speed: float = 1.0,
         emotion: str | None = None,
         generation_params: GenerationParams | None = None,
-    ) -> bytes:
-        ...
+    ) -> bytes: ...
 
     async def synthesize_instruct(
         self,
@@ -214,8 +264,7 @@ class OmniVoiceEngineInterface(Protocol):
         speed: float = 1.0,
         emotion: str | None = None,
         generation_params: GenerationParams | None = None,
-    ) -> bytes:
-        ...
+    ) -> bytes: ...
 
     async def synthesize_clone(
         self,
@@ -226,17 +275,13 @@ class OmniVoiceEngineInterface(Protocol):
         speed: float = 1.0,
         emotion: str | None = None,
         generation_params: GenerationParams | None = None,
-    ) -> bytes:
-        ...
+    ) -> bytes: ...
 
-    async def list_stock_voices(self, language: str | None = None) -> list[dict]:
-        ...
+    async def list_stock_voices(self, language: str | None = None) -> list[dict]: ...
 
-    async def health_check(self) -> dict:
-        ...
+    async def health_check(self) -> dict: ...
 
-    async def warmup(self) -> None:
-        ...
+    async def warmup(self) -> None: ...
 
 
 def _get_dtype() -> torch.dtype:
@@ -267,7 +312,7 @@ def _validate_cuda_device(device: str) -> None:
         raise EngineUnavailableError(
             f"Formato de dispositivo CUDA inválido: '{device}'. "
             "Use formato 'cuda:X' donde X es el índice del dispositivo (ej. 'cuda:0')."
-        )
+        ) from None
 
     device_count = torch.cuda.device_count()
     if device_index >= device_count:
@@ -279,10 +324,11 @@ def _validate_cuda_device(device: str) -> None:
     try:
         free_mem, total_mem = torch.cuda.mem_get_info(device_index)
         free_mb = free_mem // (1024 * 1024)
-        if free_mb < 100:
+        if free_mb < _MIN_CUDA_FREE_MB:
             raise EngineUnavailableError(
                 f"Dispositivo CUDA '{device}' tiene muy poca memoria libre: {free_mb} MB. "
-                f"Se requieren al menos 100 MB libres. Memoria total: {total_mem // (1024 * 1024)} MB."
+                f"Se requieren al menos {_MIN_CUDA_FREE_MB} MB libres. "
+                f"Memoria total: {total_mem // (1024 * 1024)} MB."
             )
     except Exception as e:
         logger.warning("No se pudo verificar memoria de CUDA device %s: %s", device, e)
@@ -308,7 +354,11 @@ class OmniVoiceEngine:
         self._device = self._settings.OMNIVOICE_DEVICE
         self._model = None
         self._stock_voices: list[dict] = []
-        self._use_mock: bool = self._settings.OMNVOICE_USE_MOCK if hasattr(self._settings, 'OMNVOICE_USE_MOCK') else self._settings.OMNIVOICE_USE_MOCK
+        self._use_mock: bool = (
+            self._settings.OMNVOICE_USE_MOCK
+            if hasattr(self._settings, "OMNVOICE_USE_MOCK")
+            else self._settings.OMNIVOICE_USE_MOCK
+        )
         self._real_engine_error: str | None = None
 
     def _activate_mock_mode(self, reason: str | None = None) -> None:
@@ -350,7 +400,8 @@ class OmniVoiceEngine:
             except EngineUnavailableError as e:
                 if self._settings.OMNIVOICE_FALLBACK_TO_MOCK:
                     logger.error(
-                        "Validación CUDA falló: %s. OMNIVOICE_FALLBACK_TO_MOCK=true → conmutando a modo MOCK.",
+                        "Validación CUDA falló: %s. "
+                        "OMNIVOICE_FALLBACK_TO_MOCK=true → conmutando a modo MOCK.",
                         e,
                     )
                     self._activate_mock_mode(reason=str(e))
@@ -391,7 +442,9 @@ class OmniVoiceEngine:
                 self._activate_mock_mode(reason=error_msg)
                 await self.warmup()
                 return
-            raise EngineUnavailableError(f"No se pudo cargar el modelo OmniVoice: {error_msg}") from e
+            raise EngineUnavailableError(
+                f"No se pudo cargar el modelo OmniVoice: {error_msg}"
+            ) from e
 
     async def warmup(self) -> None:
         """Verifica que el modelo responde."""
@@ -411,35 +464,115 @@ class OmniVoiceEngine:
     def _get_mock_stock_voices(self) -> list[dict]:
         """Voces stock mock."""
         return [
-            {"voice_id": "es-mx-male", "language": "es", "gender": "male", "name": "Spanish MX Male"},
-            {"voice_id": "es-mx-female", "language": "es", "gender": "female", "name": "Spanish MX Female"},
-            {"voice_id": "es-es-male", "language": "es", "gender": "male", "name": "Spanish Spain Male"},
-            {"voice_id": "es-es-female", "language": "es", "gender": "female", "name": "Spanish Spain Female"},
-            {"voice_id": "en-us-male", "language": "en", "gender": "male", "name": "English US Male"},
-            {"voice_id": "en-us-female", "language": "en", "gender": "female", "name": "English US Female"},
-            {"voice_id": "en-gb-male", "language": "en", "gender": "male", "name": "English UK Male"},
-            {"voice_id": "en-gb-female", "language": "en", "gender": "female", "name": "English UK Female"},
+            {
+                "voice_id": "es-mx-male",
+                "language": "es",
+                "gender": "male",
+                "name": "Spanish MX Male",
+            },
+            {
+                "voice_id": "es-mx-female",
+                "language": "es",
+                "gender": "female",
+                "name": "Spanish MX Female",
+            },
+            {
+                "voice_id": "es-es-male",
+                "language": "es",
+                "gender": "male",
+                "name": "Spanish Spain Male",
+            },
+            {
+                "voice_id": "es-es-female",
+                "language": "es",
+                "gender": "female",
+                "name": "Spanish Spain Female",
+            },
+            {
+                "voice_id": "en-us-male",
+                "language": "en",
+                "gender": "male",
+                "name": "English US Male",
+            },
+            {
+                "voice_id": "en-us-female",
+                "language": "en",
+                "gender": "female",
+                "name": "English US Female",
+            },
+            {
+                "voice_id": "en-gb-male",
+                "language": "en",
+                "gender": "male",
+                "name": "English UK Male",
+            },
+            {
+                "voice_id": "en-gb-female",
+                "language": "en",
+                "gender": "female",
+                "name": "English UK Female",
+            },
             {"voice_id": "fr-fr-male", "language": "fr", "gender": "male", "name": "French Male"},
-            {"voice_id": "fr-fr-female", "language": "fr", "gender": "female", "name": "French Female"},
+            {
+                "voice_id": "fr-fr-female",
+                "language": "fr",
+                "gender": "female",
+                "name": "French Female",
+            },
             {"voice_id": "de-de-male", "language": "de", "gender": "male", "name": "German Male"},
-            {"voice_id": "de-de-female", "language": "de", "gender": "female", "name": "German Female"},
+            {
+                "voice_id": "de-de-female",
+                "language": "de",
+                "gender": "female",
+                "name": "German Female",
+            },
             {"voice_id": "it-it-male", "language": "it", "gender": "male", "name": "Italian Male"},
-            {"voice_id": "it-it-female", "language": "it", "gender": "female", "name": "Italian Female"},
-            {"voice_id": "pt-br-male", "language": "pt", "gender": "male", "name": "Portuguese BR Male"},
-            {"voice_id": "pt-br-female", "language": "pt", "gender": "female", "name": "Portuguese BR Female"},
+            {
+                "voice_id": "it-it-female",
+                "language": "it",
+                "gender": "female",
+                "name": "Italian Female",
+            },
+            {
+                "voice_id": "pt-br-male",
+                "language": "pt",
+                "gender": "male",
+                "name": "Portuguese BR Male",
+            },
+            {
+                "voice_id": "pt-br-female",
+                "language": "pt",
+                "gender": "female",
+                "name": "Portuguese BR Female",
+            },
             {"voice_id": "zh-cn-male", "language": "zh", "gender": "male", "name": "Chinese Male"},
-            {"voice_id": "zh-cn-female", "language": "zh", "gender": "female", "name": "Chinese Female"},
+            {
+                "voice_id": "zh-cn-female",
+                "language": "zh",
+                "gender": "female",
+                "name": "Chinese Female",
+            },
             {"voice_id": "ja-jp-male", "language": "ja", "gender": "male", "name": "Japanese Male"},
-            {"voice_id": "ja-jp-female", "language": "ja", "gender": "female", "name": "Japanese Female"},
+            {
+                "voice_id": "ja-jp-female",
+                "language": "ja",
+                "gender": "female",
+                "name": "Japanese Female",
+            },
             {"voice_id": "ko-kr-male", "language": "ko", "gender": "male", "name": "Korean Male"},
-            {"voice_id": "ko-kr-female", "language": "ko", "gender": "female", "name": "Korean Female"},
+            {
+                "voice_id": "ko-kr-female",
+                "language": "ko",
+                "gender": "female",
+                "name": "Korean Female",
+            },
         ]
 
     def _get_instruct_for_voice(self, voice_id: str) -> str:
         """Obtiene el instruct válido para una voz stock."""
         instruct = STOCK_VOICE_INSTRUCTS.get(voice_id)
         if instruct is None:
-            valid_ids = list(STOCK_VOICE_INSTRUCTS.keys())
+            list(STOCK_VOICE_INSTRUCTS.keys())
             raise VoiceNotFoundError(voice_id, "stock")
         _validate_instruct(instruct)
         return instruct
@@ -478,7 +611,9 @@ class OmniVoiceEngine:
         language: str | None = None,
     ) -> bytes:
         """Sintetiza con voz stock usando voice design."""
-        logger.debug("synthesize_stock: voice_id=%s, text_len=%d, emotion=%s", voice_id, len(text), emotion)
+        logger.debug(
+            "synthesize_stock: voice_id=%s, text_len=%d, emotion=%s", voice_id, len(text), emotion
+        )
 
         voice = next((v for v in self._stock_voices if v["voice_id"] == voice_id), None)
         if not voice:
@@ -507,13 +642,15 @@ class OmniVoiceEngine:
             lang = _map_language(language)
             if lang:
                 kwargs["language"] = lang
-            if emotion and kwargs.get("guidance_scale", 2.0) == 2.0:
+            if emotion and (
+                kwargs.get("guidance_scale", _GUIDANCE_SCALE_DEFAULT) == _GUIDANCE_SCALE_DEFAULT
+            ):
                 kwargs["guidance_scale"] = 3.0
             audio = await asyncio.to_thread(self._model.generate, **kwargs)
             return self._numpy_to_wav(audio)
         except Exception as e:
             logger.error("Error en synthesize_stock: %s", e)
-            raise EngineUnavailableError(f"Error sintetizando: {e}")
+            raise EngineUnavailableError(f"Error sintetizando: {e}") from e
 
     async def synthesize_instruct(
         self,
@@ -526,7 +663,12 @@ class OmniVoiceEngine:
         language: str | None = None,
     ) -> bytes:
         """Sintetiza con instruct personalizado (voice design libre)."""
-        logger.debug("synthesize_instruct: instruct=%s, text_len=%d, emotion=%s", instruct, len(text), emotion)
+        logger.debug(
+            "synthesize_instruct: instruct=%s, text_len=%d, emotion=%s",
+            instruct,
+            len(text),
+            emotion,
+        )
 
         _validate_instruct(instruct)
 
@@ -552,13 +694,15 @@ class OmniVoiceEngine:
             lang = _map_language(language)
             if lang:
                 kwargs["language"] = lang
-            if emotion and kwargs.get("guidance_scale", 2.0) == 2.0:
+            if emotion and (
+                kwargs.get("guidance_scale", _GUIDANCE_SCALE_DEFAULT) == _GUIDANCE_SCALE_DEFAULT
+            ):
                 kwargs["guidance_scale"] = 3.0
             audio = await asyncio.to_thread(self._model.generate, **kwargs)
             return self._numpy_to_wav(audio)
         except Exception as e:
             logger.error("Error en synthesize_instruct: %s", e)
-            raise EngineUnavailableError(f"Error sintetizando: {e}")
+            raise EngineUnavailableError(f"Error sintetizando: {e}") from e
 
     async def synthesize_clone(
         self,
@@ -573,10 +717,16 @@ class OmniVoiceEngine:
         language: str | None = None,
     ) -> bytes:
         """Sintetiza con voz clonada, opcionalmente con instruct."""
-        logger.debug("synthesize_clone: ref=%s, text_len=%d, emotion=%s", reference_audio_path, len(text), emotion)
+        logger.debug(
+            "synthesize_clone: ref=%s, text_len=%d, emotion=%s",
+            reference_audio_path,
+            len(text),
+            emotion,
+        )
 
-        import os
-        if not self._use_mock and not os.path.exists(reference_audio_path):
+        from pathlib import Path
+
+        if not self._use_mock and not Path(reference_audio_path).exists():
             raise EngineUnavailableError(f"Reference audio no encontrado: {reference_audio_path}")
 
         if self._use_mock:
@@ -595,10 +745,8 @@ class OmniVoiceEngine:
 
         # Clone-specific tuning: smoother fade-in to suppress initial artifact,
         # higher steps for better voice fidelity
-        if params.fade_duration < 0.3:
-            params.fade_duration = 0.3
-        if params.num_step < 48:
-            params.num_step = 48
+        params.fade_duration = max(params.fade_duration, 0.3)
+        params.num_step = max(params.num_step, 48)
 
         try:
             kwargs = params.to_kwargs()
@@ -610,7 +758,9 @@ class OmniVoiceEngine:
             lang = _map_language(language)
             if lang:
                 kwargs["language"] = lang
-            if emotion and kwargs.get("guidance_scale", 2.0) == 2.0:
+            if emotion and (
+                kwargs.get("guidance_scale", _GUIDANCE_SCALE_DEFAULT) == _GUIDANCE_SCALE_DEFAULT
+            ):
                 kwargs["guidance_scale"] = 3.0
             if instruct:
                 _validate_instruct(instruct)
@@ -619,7 +769,7 @@ class OmniVoiceEngine:
             return self._numpy_to_wav(audio)
         except Exception as e:
             logger.error("Error en synthesize_clone: %s", e)
-            raise EngineUnavailableError(f"Error sintetizando con voz clonada: {e}")
+            raise EngineUnavailableError(f"Error sintetizando con voz clonada: {e}") from e
 
     async def list_stock_voices(self, language: str | None = None) -> list[dict]:
         """Lista voces stock."""
@@ -668,14 +818,14 @@ class OmniVoiceEngine:
             t = i / sample_rate
             value = amplitude * math.sin(2 * math.pi * frequency * t)
             sample = int(max_amplitude * value)
-            samples.append(struct.pack('<h', sample))
+            samples.append(struct.pack("<h", sample))
 
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
             wav_file.setframerate(sample_rate)
-            wav_file.writeframes(b''.join(samples))
+            wav_file.writeframes(b"".join(samples))
 
         return buffer.getvalue()
 

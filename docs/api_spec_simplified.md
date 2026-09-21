@@ -443,11 +443,12 @@ curl -X POST "http://localhost:8000/api/v1/conversations" \
 ```python
 import httpx
 
+
 async def tts(text: str, voice_id: str, language: str) -> bytes:
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             "http://localhost:8000/api/v1/tts",
-            json={"text": text, "voice_id": voice_id, "language": language}
+            json={"text": text, "voice_id": voice_id, "language": language},
         )
         resp.raise_for_status()
         return resp.content

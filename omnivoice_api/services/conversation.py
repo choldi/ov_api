@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import io
 import wave
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
-from omnivoice_api.core.exceptions import (
-    EngineUnavailableError,
-    VoiceNotFoundError,
-)
+
+# Número mínimo de turnos para considerar válida una conversación.
+_MIN_CONVERSATION_TURNS = 2
 
 
 @dataclass
 class ConversationTurn:
     """Un turno de una conversación."""
+
     voice_id: str
     text: str
     language: str = "es"
@@ -59,12 +59,14 @@ class ConversationService:
             ValueError: Si hay menos de 2 turnos o text vacío.
             VoiceNotFoundError: Si alguna voz no existe.
         """
-        if len(turns) < 2:
-            raise ValueError("Se requieren al menos 2 turnos para una conversación")
+        if len(turns) < _MIN_CONVERSATION_TURNS:
+            raise ValueError(
+                f"Se requieren al menos {_MIN_CONVERSATION_TURNS} turnos para una conversación"
+            )
 
         for i, turn in enumerate(turns):
             if not turn.text or not turn.text.strip():
-                raise ValueError(f"El turno {i+1} tiene texto vacío")
+                raise ValueError(f"El turno {i + 1} tiene texto vacío")
 
         # Sintetizar cada turno a través de TtsService (cloned → designed → stock)
         audio_segments: list[bytes] = []
@@ -116,8 +118,8 @@ class ConversationService:
         if data_pos == -1:
             return wav_bytes
 
-        data_size = int.from_bytes(wav_bytes[data_pos + 4: data_pos + 8], byteorder="little")
-        return wav_bytes[data_pos + 8: data_pos + 8 + data_size]
+        data_size = int.from_bytes(wav_bytes[data_pos + 4 : data_pos + 8], byteorder="little")
+        return wav_bytes[data_pos + 8 : data_pos + 8 + data_size]
 
     def _build_wav(self, frames: bytes, sample_rate: int) -> bytes:
         """Construye un WAV válido a partir de frames raw."""

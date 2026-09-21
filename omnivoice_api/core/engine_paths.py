@@ -68,8 +68,8 @@ def load_env_file(env_path: Path | None = None) -> None:
         return
 
     with env_path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+        for raw_line in f:
+            line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             if line.startswith("export "):

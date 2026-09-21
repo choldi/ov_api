@@ -26,7 +26,9 @@ class EnginePool:
         await self._semaphore.acquire()
         self._active += 1
         self._total += 1
-        logger.debug("EnginePool: slot adquirido (active=%d/%d)", self._active, self._max_concurrent)
+        logger.debug(
+            "EnginePool: slot adquirido (active=%d/%d)", self._active, self._max_concurrent
+        )
 
     def release(self) -> None:
         """Libera un slot del pool."""

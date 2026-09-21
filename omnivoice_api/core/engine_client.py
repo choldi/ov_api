@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import time
 import uuid
 from dataclasses import dataclass
@@ -10,16 +9,19 @@ from dataclasses import dataclass
 import structlog
 
 from omnivoice_api.core.engine_base import TtsEngineBase
-from omnivoice_api.core.exceptions import (
-    EngineUnavailableError,
-)
 
 logger = structlog.get_logger(__name__)
+
+# Tamaño mínimo de cabecera WAV estándar (44 bytes) y su tipo PCM más común.
+_WAV_HEADER_SIZE = 44
+_PCM16_BITS_PER_SAMPLE = 16
+_RMS_SILENCE_THRESHOLD = 100.0
 
 
 @dataclass
 class StockVoice:
     """Voz stock disponible en el motor."""
+
     voice_id: str
     language: str
     gender: str
@@ -29,6 +31,7 @@ class StockVoice:
 @dataclass
 class AudioResult:
     """Resultado de la síntesis de audio."""
+
     wav_bytes: bytes
     duration_sec: float
     sample_rate: int
@@ -37,6 +40,7 @@ class AudioResult:
 @dataclass
 class EngineHealth:
     """Estado de salud del motor."""
+
     reachable: bool
     model_loaded: bool
     gpu_available: bool
@@ -47,11 +51,11 @@ def _parse_wav_header(wav_bytes: bytes) -> tuple[int, float]:
     """Parsea la cabecera de un WAV y devuelve (sample_rate, duration_sec)."""
     sample_rate = 22050
     duration_sec = 0.0
-    if len(wav_bytes) >= 44:
+    if len(wav_bytes) >= _WAV_HEADER_SIZE:
         try:
-            sample_rate = int.from_bytes(wav_bytes[24:28], byteorder='little')
-            byte_rate = int.from_bytes(wav_bytes[28:32], byteorder='little')
-            subchunk2_size = int.from_bytes(wav_bytes[40:44], byteorder='little')
+            sample_rate = int.from_bytes(wav_bytes[24:28], byteorder="little")
+            byte_rate = int.from_bytes(wav_bytes[28:32], byteorder="little")
+            subchunk2_size = int.from_bytes(wav_bytes[40:44], byteorder="little")
             duration_sec = subchunk2_size / byte_rate if byte_rate > 0 else 0.0
         except Exception:
             duration_sec = len(wav_bytes) / (sample_rate * 2)
@@ -60,7 +64,7 @@ def _parse_wav_header(wav_bytes: bytes) -> tuple[int, float]:
     return sample_rate, duration_sec
 
 
-def _validate_wav_audio(wav_bytes: bytes) -> dict:
+def _validate_wav_audio(wav_bytes: bytes) -> dict:  # noqa: PLR0911  # validación WAV con short-circuits
     """Valida un WAV y devuelve información detallada para debugging."""
     result = {
         "valid": False,
@@ -71,73 +75,76 @@ def _validate_wav_audio(wav_bytes: bytes) -> dict:
         "rms_amplitude": 0.0,
         "peak_amplitude": 0.0,
         "is_silent": True,
-        "error": None
+        "error": None,
     }
 
-    if len(wav_bytes) < 44:
+    if len(wav_bytes) < _WAV_HEADER_SIZE:
         result["error"] = "WAV too small (< 44 bytes header)"
         return result
 
     try:
         riff = wav_bytes[0:4]
-        if riff != b'RIFF':
+        if riff != b"RIFF":
             result["error"] = f"Invalid RIFF header: {riff}"
             return result
 
         wave_fmt = wav_bytes[8:12]
-        if wave_fmt != b'WAVE':
+        if wave_fmt != b"WAVE":
             result["error"] = f"Invalid WAVE format: {wave_fmt}"
             return result
 
-        fmt_pos = wav_bytes.find(b'fmt ')
+        fmt_pos = wav_bytes.find(b"fmt ")
         if fmt_pos == -1:
             result["error"] = "fmt chunk not found"
             return result
 
-        fmt_size = int.from_bytes(wav_bytes[fmt_pos+4:fmt_pos+8], byteorder='little')
-        if fmt_size < 16:
+        fmt_size = int.from_bytes(wav_bytes[fmt_pos + 4 : fmt_pos + 8], byteorder="little")
+        if fmt_size < _PCM16_BITS_PER_SAMPLE:
             result["error"] = f"fmt chunk too small: {fmt_size}"
             return result
 
-        num_channels = int.from_bytes(wav_bytes[fmt_pos+10:fmt_pos+12], byteorder='little')
-        sample_rate = int.from_bytes(wav_bytes[fmt_pos+12:fmt_pos+16], byteorder='little')
-        byte_rate = int.from_bytes(wav_bytes[fmt_pos+16:fmt_pos+20], byteorder='little')
-        bits_per_sample = int.from_bytes(wav_bytes[fmt_pos+22:fmt_pos+24], byteorder='little')
+        num_channels = int.from_bytes(wav_bytes[fmt_pos + 10 : fmt_pos + 12], byteorder="little")
+        sample_rate = int.from_bytes(wav_bytes[fmt_pos + 12 : fmt_pos + 16], byteorder="little")
+        byte_rate = int.from_bytes(wav_bytes[fmt_pos + 16 : fmt_pos + 20], byteorder="little")
+        bits_per_sample = int.from_bytes(wav_bytes[fmt_pos + 22 : fmt_pos + 24], byteorder="little")
 
-        data_pos = wav_bytes.find(b'data', fmt_pos + 8 + fmt_size)
+        data_pos = wav_bytes.find(b"data", fmt_pos + 8 + fmt_size)
         if data_pos == -1:
             result["error"] = "data chunk not found"
             return result
 
-        data_size = int.from_bytes(wav_bytes[data_pos+4:data_pos+8], byteorder='little')
-        audio_data = wav_bytes[data_pos+8:data_pos+8+data_size]
+        data_size = int.from_bytes(wav_bytes[data_pos + 4 : data_pos + 8], byteorder="little")
+        audio_data = wav_bytes[data_pos + 8 : data_pos + 8 + data_size]
 
         if len(audio_data) != data_size:
             result["error"] = f"Data size mismatch: expected {data_size}, got {len(audio_data)}"
             return result
 
-        if bits_per_sample == 16 and num_channels == 1:
+        if bits_per_sample == _PCM16_BITS_PER_SAMPLE and num_channels == 1:
             import struct
+
             num_samples = len(audio_data) // 2
             if num_samples > 0:
-                fmt_str = f'<{num_samples}h'
+                fmt_str = f"<{num_samples}h"
                 samples = struct.unpack(fmt_str, audio_data)
                 sum_squares = sum(s * s for s in samples)
                 rms = (sum_squares / num_samples) ** 0.5
                 peak = max(abs(s) for s in samples)
                 result["rms_amplitude"] = rms / 32767.0
                 result["peak_amplitude"] = peak / 32767.0
-                result["is_silent"] = rms < 100
+                result["is_silent"] = rms < _RMS_SILENCE_THRESHOLD
 
         duration_sec = data_size / byte_rate if byte_rate > 0 else 0.0
 
-        result.update({
-            "valid": True,
-            "sample_rate": sample_rate,
-            "duration_sec": duration_sec,
-            "num_channels": num_channels,
-            "bits_per_sample": bits_per_sample,
-        })
+        result.update(
+            {
+                "valid": True,
+                "sample_rate": sample_rate,
+                "duration_sec": duration_sec,
+                "num_channels": num_channels,
+                "bits_per_sample": bits_per_sample,
+            }
+        )
 
     except Exception as e:
         result["error"] = f"Parse error: {e}"
@@ -158,6 +165,7 @@ class OmniVoiceEngineClient:
             logger.info("engine_client_starting")
             if self._engine is None:
                 from omnivoice_api.core.engine_factory import create_engine
+
                 self._engine = create_engine()
             await self._engine.initialize()
             self._started = True

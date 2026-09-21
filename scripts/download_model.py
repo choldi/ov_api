@@ -64,11 +64,10 @@ def download_model() -> bool:
     print(f"Destino:   {model_dir}")
 
     try:
-        from huggingface_hub import snapshot_download  # noqa: PLC0415
+        from huggingface_hub import snapshot_download
     except ImportError:
         print(
-            "ERROR: huggingface_hub no está instalado.\n"
-            "Instálalo con: pip install huggingface_hub"
+            "ERROR: huggingface_hub no está instalado.\nInstálalo con: pip install huggingface_hub"
         )
         return False
 

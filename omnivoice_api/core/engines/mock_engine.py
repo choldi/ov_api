@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import io
 import math
 import struct
@@ -76,18 +75,68 @@ class MockEngine(TtsEngineBase):
 
     async def list_stock_voices(self, language: str | None = None) -> list[dict]:
         voices = [
-            {"voice_id": "es-mx-male", "language": "es", "gender": "male", "name": "Spanish MX Male"},
-            {"voice_id": "es-mx-female", "language": "es", "gender": "female", "name": "Spanish MX Female"},
-            {"voice_id": "es-es-male", "language": "es", "gender": "male", "name": "Spanish Spain Male"},
-            {"voice_id": "es-es-female", "language": "es", "gender": "female", "name": "Spanish Spain Female"},
+            {
+                "voice_id": "es-mx-male",
+                "language": "es",
+                "gender": "male",
+                "name": "Spanish MX Male",
+            },
+            {
+                "voice_id": "es-mx-female",
+                "language": "es",
+                "gender": "female",
+                "name": "Spanish MX Female",
+            },
+            {
+                "voice_id": "es-es-male",
+                "language": "es",
+                "gender": "male",
+                "name": "Spanish Spain Male",
+            },
+            {
+                "voice_id": "es-es-female",
+                "language": "es",
+                "gender": "female",
+                "name": "Spanish Spain Female",
+            },
             {"voice_id": "ca-male", "language": "ca", "gender": "male", "name": "Catalan Male"},
-            {"voice_id": "ca-female", "language": "ca", "gender": "female", "name": "Catalan Female"},
-            {"voice_id": "en-us-male", "language": "en", "gender": "male", "name": "English US Male"},
-            {"voice_id": "en-us-female", "language": "en", "gender": "female", "name": "English US Female"},
-            {"voice_id": "en-gb-male", "language": "en", "gender": "male", "name": "English UK Male"},
-            {"voice_id": "en-gb-female", "language": "en", "gender": "female", "name": "English UK Female"},
+            {
+                "voice_id": "ca-female",
+                "language": "ca",
+                "gender": "female",
+                "name": "Catalan Female",
+            },
+            {
+                "voice_id": "en-us-male",
+                "language": "en",
+                "gender": "male",
+                "name": "English US Male",
+            },
+            {
+                "voice_id": "en-us-female",
+                "language": "en",
+                "gender": "female",
+                "name": "English US Female",
+            },
+            {
+                "voice_id": "en-gb-male",
+                "language": "en",
+                "gender": "male",
+                "name": "English UK Male",
+            },
+            {
+                "voice_id": "en-gb-female",
+                "language": "en",
+                "gender": "female",
+                "name": "English UK Female",
+            },
             {"voice_id": "fr-fr-male", "language": "fr", "gender": "male", "name": "French Male"},
-            {"voice_id": "fr-fr-female", "language": "fr", "gender": "female", "name": "French Female"},
+            {
+                "voice_id": "fr-fr-female",
+                "language": "fr",
+                "gender": "female",
+                "name": "French Female",
+            },
         ]
         if language:
             voices = [v for v in voices if v["language"] == language]

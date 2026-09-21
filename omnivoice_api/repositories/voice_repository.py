@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import aiosqlite
 from loguru import logger
@@ -24,7 +24,7 @@ class VoiceRepository:
         # Strip SQLAlchemy driver prefix to get a plain file path
         for prefix in ("sqlite+aiosqlite:///", "sqlite:///"):
             if url.startswith(prefix):
-                url = url[len(prefix):]
+                url = url[len(prefix) :]
                 break
         self._db_path = url
         # Ensure the directory exists
@@ -87,24 +87,24 @@ class VoiceRepository:
         metadata: dict | None = None,
     ) -> str:
         """Create a new cloned voice record.
-        
+
         Args:
             name: Unique name for the voice
             language: Language code (ISO 639-1)
             reference_path: Path to the reference audio file
             duration_sec: Duration of the reference audio in seconds
             metadata: Optional metadata as dictionary
-            
+
         Returns:
             str: The UUID of the created voice record
-            
+
         Raises:
             ValueError: If a voice with the same name already exists
         """
         voice_id = str(uuid4())
         now = datetime.utcnow().isoformat()
         metadata_json = json.dumps(metadata or {})
-        
+
         # Get connection
         conn = await self._get_connection()
         try:
@@ -128,13 +128,14 @@ class VoiceRepository:
 
     async def get_by_id(self, voice_id: str) -> dict:
         """Get a voice by its ID.
-        
+
         Args:
             voice_id: The UUID of the voice
-            
+
         Returns:
-            dict: Voice data including id, name, language, reference_path, duration_sec, created_at, metadata
-            
+            dict: Voice data (id, name, language, reference_path, duration_sec,
+                created_at, metadata)
+
         Raises:
             VoiceNotFoundError: If no voice is found with the given ID
         """
@@ -151,10 +152,10 @@ class VoiceRepository:
                 (voice_id,),
             )
             row = await cursor.fetchone()
-            
+
             if row is None:
                 raise VoiceNotFoundError(voice_id, "cloned")
-                
+
             return {
                 "id": row["id"],
                 "name": row["name"],
@@ -169,13 +170,13 @@ class VoiceRepository:
 
     async def get_by_name(self, name: str) -> dict:
         """Get a voice by its name.
-        
+
         Args:
             name: The name of the voice
-            
+
         Returns:
             dict: Voice data
-            
+
         Raises:
             VoiceNotFoundError: If no voice is found with the given name
         """
@@ -192,10 +193,10 @@ class VoiceRepository:
                 (name,),
             )
             row = await cursor.fetchone()
-            
+
             if row is None:
                 raise VoiceNotFoundError(name, "cloned (by name)")
-                
+
             return {
                 "id": row["id"],
                 "name": row["name"],
@@ -209,18 +210,15 @@ class VoiceRepository:
             await conn.close()
 
     async def list(
-        self, 
-        language: str | None = None,
-        limit: int = 100,
-        offset: int = 0
+        self, language: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[dict]:
         """List voices with optional filtering.
-        
+
         Args:
             language: Filter by language (ISO 639-1)
             limit: Maximum number of results
             offset: Number of results to skip
-            
+
         Returns:
             list[dict]: List of voice dictionaries
         """
@@ -228,7 +226,7 @@ class VoiceRepository:
         conn = await self._get_connection()
         try:
             conn.row_factory = aiosqlite.Row
-            
+
             if language:
                 cursor = await conn.execute(
                     """
@@ -250,9 +248,9 @@ class VoiceRepository:
                     """,
                     (limit, offset),
                 )
-            
+
             rows = await cursor.fetchall()
-            
+
             return [
                 {
                     "id": row["id"],
@@ -269,41 +267,38 @@ class VoiceRepository:
             await conn.close()
 
     async def update(
-        self, 
-        voice_id: str, 
-        name: str | None = None,
-        metadata: dict | None = None
+        self, voice_id: str, name: str | None = None, metadata: dict | None = None
     ) -> bool:
         """Update a voice's metadata.
-        
+
         Args:
             voice_id: The UUID of the voice to update
             name: New name for the voice (optional)
             metadata: New metadata to merge with existing (optional)
-            
+
         Returns:
             bool: True if the voice was updated, False if not found
-            
+
         Raises:
             ValueError: If the new name conflicts with an existing voice
         """
         updates = []
         params = []
-        
+
         if name is not None:
             updates.append("name = ?")
             params.append(name)
-            
+
         if metadata is not None:
             # Get current metadata and merge
             current = await self.get_by_id(voice_id)
             merged_metadata = {**current["metadata"], **metadata}
             updates.append("metadata = ?")
             params.append(json.dumps(merged_metadata))
-            
+
         if not updates:
             return False
-            
+
         updates.append("created_at = ?")  # Update timestamp
         params.append(datetime.utcnow().isoformat())
         params.append(voice_id)  # FOR WHERE clause
@@ -311,11 +306,11 @@ class VoiceRepository:
         conn = await self._get_connection()
         try:
             cursor = await conn.execute(
-                f'UPDATE cloned_voices SET {", ".join(updates)} WHERE id = ?',
+                f"UPDATE cloned_voices SET {', '.join(updates)} WHERE id = ?",
                 params,
             )
             await conn.commit()
-            
+
             updated = cursor.rowcount > 0
             if updated:
                 logger.info(f"Updated cloned voice {voice_id}")
@@ -329,10 +324,10 @@ class VoiceRepository:
 
     async def delete(self, voice_id: str) -> bool:
         """Delete a voice by its ID.
-        
+
         Args:
             voice_id: The UUID of the voice to delete
-            
+
         Returns:
             bool: True if the voice was deleted, False if not found
         """
@@ -344,7 +339,7 @@ class VoiceRepository:
                 (voice_id,),
             )
             await conn.commit()
-            
+
             deleted = cursor.rowcount > 0
             if deleted:
                 logger.info(f"Deleted cloned voice {voice_id}")

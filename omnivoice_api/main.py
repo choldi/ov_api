@@ -36,15 +36,16 @@ def _force_proactor_loop_factory() -> asyncio.AbstractEventLoop:
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from omnivoice_api.settings import get_settings
-from omnivoice_api.core.cleanup import start_cleanup_task, stop_cleanup_task
-from omnivoice_api.middleware import RequestIDMiddleware, APIKeyMiddleware
 from omnivoice_api.api.v1 import conversations, system, tts, voices
+from omnivoice_api.core.cleanup import start_cleanup_task, stop_cleanup_task
+from omnivoice_api.middleware import APIKeyMiddleware, RequestIDMiddleware
+from omnivoice_api.settings import get_settings
 
 # Global engine reference for lifespan
 _active_engine = None
@@ -57,10 +58,14 @@ async def lifespan(app: FastAPI):
     try:
         current_loop = asyncio.get_running_loop()
         loop_class = type(current_loop).__name__
-        is_proactor = sys.platform == "win32" and isinstance(current_loop, asyncio.ProactorEventLoop)
+        is_proactor = sys.platform == "win32" and isinstance(
+            current_loop, asyncio.ProactorEventLoop
+        )
         logger.info(
             "Lifespan startup: loop class=%s, is_proactor=%s, platform=%s",
-            loop_class, is_proactor, sys.platform,
+            loop_class,
+            is_proactor,
+            sys.platform,
         )
         if sys.platform == "win32" and not is_proactor:
             logger.warning(
@@ -75,6 +80,7 @@ async def lifespan(app: FastAPI):
 
     try:
         from omnivoice_api.core.engine_factory import create_engine
+
         _active_engine = create_engine(engine_name)
         await _active_engine.initialize()
         logger.info("Engine '%s' inicializado correctamente", _active_engine.name)
@@ -86,6 +92,7 @@ async def lifespan(app: FastAPI):
                 e,
             )
             from omnivoice_api.core.engines.mock_engine import MockEngine
+
             _active_engine = MockEngine()
             await _active_engine.initialize()
         else:
@@ -137,8 +144,8 @@ app.add_middleware(APIKeyMiddleware, api_key=settings.API_KEY)
 
 # --- Rate limiting (slowapi) ---
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -182,6 +189,7 @@ async def list_emotions() -> list[dict]:
     }
     # OmniVoice-specific emotions
     from omnivoice_api.core.omnivoice_engine import SUPPORTED_EMOTIONS
+
     return [
         {"id": e, "name": e.capitalize(), "description": descriptions.get(e, "")}
         for e in SUPPORTED_EMOTIONS
@@ -240,6 +248,7 @@ async def readiness() -> JSONResponse:
     # Only check OmniVoice-specific paths for omnivoice engine
     if _active_engine.name == "omnivoice":
         from omnivoice_api.core.engine_paths import default_install_dir
+
         checks["install_dir_exists"] = default_install_dir().exists()
         checks["venv_python_exists"] = settings.python_bin.exists()
         ready = ready and checks["install_dir_exists"] and checks["venv_python_exists"]

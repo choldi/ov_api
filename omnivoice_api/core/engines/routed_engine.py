@@ -8,8 +8,6 @@ from typing import Any
 from omnivoice_api.core.engine_base import EngineCapabilities, TtsEngineBase
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
-    FeatureNotSupportedError,
-    UnsupportedLanguageError,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,19 +152,11 @@ class RoutedEngine(TtsEngineBase):
                 sub_health[name] = {"error": str(e)}
 
         return {
-            "model_loaded": all(
-                h.get("model_loaded", False) for h in sub_health.values()
-            ),
-            "gpu_available": any(
-                h.get("gpu_available", False) for h in sub_health.values()
-            ),
+            "model_loaded": all(h.get("model_loaded", False) for h in sub_health.values()),
+            "gpu_available": any(h.get("gpu_available", False) for h in sub_health.values()),
             "device": "routed",
-            "stock_voices_count": sum(
-                h.get("stock_voices_count", 0) for h in sub_health.values()
-            ),
-            "vram_free_mb": sum(
-                h.get("vram_free_mb", 0) for h in sub_health.values()
-            ),
+            "stock_voices_count": sum(h.get("stock_voices_count", 0) for h in sub_health.values()),
+            "vram_free_mb": sum(h.get("vram_free_mb", 0) for h in sub_health.values()),
             "mode": "ROUTED",
             "engine": self.name,
             "routing": self._routing,

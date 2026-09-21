@@ -59,7 +59,7 @@ def resolve_external_paths() -> tuple[Path, Path]:
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
 
-    from omnivoice_api.core.engine_paths import (  # noqa: PLC0415
+    from omnivoice_api.core.engine_paths import (
         default_install_dir,
         python_bin_from_venv,
     )
@@ -112,7 +112,7 @@ def check_external_install() -> bool:
         print(f"  ERROR: no existe el directorio de instalación: {install_dir}")
         return False
 
-    from omnivoice_api.core.engine_paths import python_bin_from_venv  # noqa: PLC0415
+    from omnivoice_api.core.engine_paths import python_bin_from_venv
 
     try:
         python_bin = python_bin_from_venv(venv_dir)
@@ -123,14 +123,12 @@ def check_external_install() -> bool:
     print(f"  OK: Python del venv externo = {python_bin}")
 
     # Verificar que el venv externo puede importar omnivoice
-    check_cmd = (
-        "import omnivoice; "
-        "print(f'  omnivoice importado OK desde: {omnivoice.__file__}')"
-    )
+    check_cmd = "import omnivoice; print(f'  omnivoice importado OK desde: {omnivoice.__file__}')"
     result = subprocess.run(
         [str(python_bin), "-c", check_cmd],
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.stdout:
         print(result.stdout, end="")
@@ -152,7 +150,7 @@ def check_torch_cuda() -> bool:
     """
     print("(2) Verificando que torch tiene CUDA habilitado...")
     try:
-        import torch  # noqa: PLC0415
+        import torch
     except ImportError:
         print("  ERROR: torch no está instalado en el venv actual")
         print("  Ejecuta `make install` (uv sync) para instalarlo con CUDA 12.4")
