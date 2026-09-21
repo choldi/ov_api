@@ -44,7 +44,7 @@ from fastapi.staticfiles import StaticFiles
 from omnivoice_api.settings import get_settings
 from omnivoice_api.core.cleanup import start_cleanup_task, stop_cleanup_task
 from omnivoice_api.middleware import RequestIDMiddleware, APIKeyMiddleware
-from omnivoice_api.api.v1 import voices, tts, conversations
+from omnivoice_api.api.v1 import conversations, system, tts, voices
 
 # Global engine reference for lifespan
 _active_engine = None
@@ -158,6 +158,7 @@ if STATIC_DIR.is_dir():
 app.include_router(voices.router, prefix="/api/v1")
 app.include_router(tts.router, prefix="/api/v1")
 app.include_router(conversations.router, prefix="/api/v1")
+app.include_router(system.router, prefix="/api/v1")
 
 
 @app.get("/api/v1/emotions", tags=["tts"], summary="Listar emociones soportadas")

@@ -27,6 +27,22 @@ async def test_health_endpoint_returns_ok(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_disk_endpoint(async_client: AsyncClient):
+    """Verifica que /api/v1/disk devuelve 200 con total/free/used en bytes."""
+    response = await async_client.get("/api/v1/disk")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["total"] > 0
+    assert data["free"] >= 0
+    assert data["used"] >= 0
+    assert data["free"] <= data["total"]
+    assert data["used"] <= data["total"]
+    assert "path" in data
+
+
+@pytest.mark.asyncio
 async def test_liveness_endpoint(async_client: AsyncClient):
     """Verifica que /api/v1/health/live responde 200."""
     response = await async_client.get("/api/v1/health/live")

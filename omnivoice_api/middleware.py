@@ -31,10 +31,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
     Si settings.API_KEY está vacío, todas las peticiones pasan sin autenticación.
     Si tiene un valor, se requiere el header `X-API-Key` o query param `api_key`.
-    Los endpoints /docs, /redoc, /openapi.json, /metrics y /api/v1/health* siempre son públicos.
+    Los endpoints /docs, /redoc, /openapi.json, /metrics, /api/v1/health* y /api/v1/disk siempre son públicos.
     """
 
-    PUBLIC_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/metrics"}
+    PUBLIC_PATHS = {"/", "/docs", "/redoc", "/openapi.json", "/metrics", "/api/v1/disk"}
 
     def __init__(self, app, api_key: str = "") -> None:
         super().__init__(app)

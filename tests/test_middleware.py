@@ -25,6 +25,7 @@ def _build_app(api_key: str = "") -> Starlette:
     app = Starlette()
     app.add_route("/test", dummy_handler)
     app.add_route("/api/v1/health", dummy_handler)
+    app.add_route("/api/v1/disk", dummy_handler)
     app.add_route("/docs", dummy_handler)
     app.add_middleware(RequestIDMiddleware)
     app.add_middleware(APIKeyMiddleware, api_key=api_key)
@@ -101,6 +102,12 @@ class TestAPIKeyMiddleware:
         """Test de que /health no requiere API key."""
         client = TestClient(_build_app(api_key="secret123"))
         response = client.get("/api/v1/health")
+        assert response.status_code == 200
+
+    def test_disk_endpoint_bypasses_auth(self) -> None:
+        """Test de que /disk no requiere API key."""
+        client = TestClient(_build_app(api_key="secret123"))
+        response = client.get("/api/v1/disk")
         assert response.status_code == 200
 
     def test_docs_endpoint_bypasses_auth(self) -> None:
