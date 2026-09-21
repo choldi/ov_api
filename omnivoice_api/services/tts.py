@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
 from omnivoice_api.core.exceptions import (
-    EngineUnavailableError,
+    UnsupportedEmotionError,
+    UnsupportedLanguageError,
     VoiceNotFoundError,
 )
 from omnivoice_api.services.voice_service import VoiceService
@@ -23,6 +24,35 @@ class TtsService:
         self._engine_client = engine_client
         self._voice_service = voice_service
 
+    def _validate_language(self, language: str) -> None:
+        """Rechaza idiomas fuera de la lista soportada antes de llamar al engine.
+
+        Args:
+            language: Idioma solicitado (ISO 639-1).
+
+        Raises:
+            UnsupportedLanguageError: Si el idioma no está soportado.
+        """
+        supported = list(self._settings.omnilang_list)
+        if language not in supported:
+            raise UnsupportedLanguageError(language, supported)
+
+    def _validate_emotion(self, emotion: str | None) -> None:
+        """Rechaza emociones fuera de la lista soportada por OmniVoice.
+
+        Args:
+            emotion: Emoción solicitada o ``None``.
+
+        Raises:
+            UnsupportedEmotionError: Si la emoción no está soportada.
+        """
+        if emotion is None:
+            return
+        from omnivoice_api.core.omnivoice_engine import SUPPORTED_EMOTIONS
+
+        if emotion not in SUPPORTED_EMOTIONS:
+            raise UnsupportedEmotionError(emotion, list(SUPPORTED_EMOTIONS))
+
     async def _get_engine_client(self) -> OmniVoiceEngineClient:
         if self._engine_client is None:
             self._engine_client = OmniVoiceEngineClient()
@@ -33,7 +63,7 @@ class TtsService:
         if self._voice_service is None:
             self._voice_service = VoiceService()
             await self._voice_service.initialize()
-        elif not getattr(self._voice_service, '_initialized', False):
+        elif not getattr(self._voice_service, "_initialized", False):
             await self._voice_service.initialize()
         return self._voice_service
 
@@ -53,6 +83,8 @@ class TtsService:
           2. Designed voice (instruct preset from DB)
           3. Stock voice (hardcoded mapping)
         """
+        self._validate_language(language)
+        self._validate_emotion(emotion)
         # 1. Try cloned voice
         try:
             voice_service = await self._get_voice_service()
@@ -62,12 +94,12 @@ class TtsService:
                 voice_id=voice_id,
                 language=language,
                 speed=speed,
-                emotion=emotion,
             )
         except VoiceNotFoundError:
             pass
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).warning("Cloned voice lookup failed: %s", e)
 
         # 2. Try designed voice (instruct preset from DB)
@@ -86,6 +118,7 @@ class TtsService:
             pass
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).warning("Designed voice synthesis failed: %s", e)
 
         # 3. Fall back to stock voices
@@ -116,6 +149,8 @@ class TtsService:
         emotion: str | None = None,
     ) -> AudioResult:
         """Sintetiza texto con instruct personalizado (voice design libre)."""
+        self._validate_language(language)
+        self._validate_emotion(emotion)
         engine = await self._get_engine_client()
         return await engine.synthesize_instruct(
             text=text,
@@ -132,15 +167,14 @@ class TtsService:
         voice_id: str,
         language: str,
         speed: float = 1.0,
-        emotion: str | None = None,
     ) -> AudioResult:
         """Sintetiza texto con voz clonada."""
         voice_service = await self._get_voice_service()
         voice_data = await voice_service.get_voice(voice_id)
         reference_audio_path = voice_data["reference_path"]
 
-        # Use the voice's own language from the DB, not the API parameter.
-        voice_language = voice_data["language"]
+        # Use the voice's own language from the DB, with the API parameter as fallback.
+        voice_language = voice_data.get("language") or language
 
         # Retrieve ref_text (pre-computed transcription) from metadata
         ref_text = voice_data.get("metadata", {}).get("ref_text")

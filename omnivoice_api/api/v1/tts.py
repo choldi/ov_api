@@ -7,17 +7,18 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 from fastapi.responses import Response, StreamingResponse
 
-from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
+from omnivoice_api.core.engine_client import OmniVoiceEngineClient
+from omnivoice_api.core.engine_pool import get_engine_pool
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
     FeatureNotSupportedError,
+    UnsupportedEmotionError,
     UnsupportedInstructError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
 from omnivoice_api.services.tts import TtsService
 from omnivoice_api.services.voice_service import VoiceService
-from omnivoice_api.core.engine_pool import get_engine_pool
 
 router = APIRouter(prefix="/tts", tags=["tts"])
 
@@ -70,10 +71,19 @@ def _handle_tts_error(e: Exception) -> None:
                 "detail": str(e),
                 "error_type": "unsupported_instruct",
                 "invalid_items": [
-                    {"token": token, "suggestion": sug}
-                    for token, sug in e.invalid_items.items()
+                    {"token": token, "suggestion": sug} for token, sug in e.invalid_items.items()
                 ],
                 "valid_tokens": e.valid_items,
+            },
+        ) from e
+    if isinstance(e, UnsupportedEmotionError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "detail": f"Emoción no soportada: {e.emotion}",
+                "error_type": "unsupported_emotion",
+                "emotion": e.emotion,
+                "supported_emotions": e.supported_emotions,
             },
         ) from e
     if isinstance(e, FeatureNotSupportedError):
@@ -89,7 +99,10 @@ def _handle_tts_error(e: Exception) -> None:
     if isinstance(e, EngineUnavailableError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"detail": "Motor de síntesis no disponible", "error_type": "engine_unavailable"},
+            detail={
+                "detail": "Motor de síntesis no disponible",
+                "error_type": "engine_unavailable",
+            },
         ) from e
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -114,8 +127,12 @@ async def synthesize_tts(
     voice_id: Annotated[str, Body(description="ID de la voz (ej: es-mx-male)")],
     language: Annotated[str, Body(description="Idioma del texto (ISO 639-1)")],
     speed: Annotated[float, Body(ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
-    instruct: Annotated[str | None, Body(description="Instruct personalizado (voice design libre, solo OmniVoice)")] = None,
-    emotion: Annotated[str | None, Body(description="Emoción (solo engines que la soporten)")] = None,
+    instruct: Annotated[
+        str | None, Body(description="Instruct personalizado (voice design libre, solo OmniVoice)")
+    ] = None,
+    emotion: Annotated[
+        str | None, Body(description="Emoción (solo engines que la soporten)")
+    ] = None,
     stream: Annotated[bool, Query(description="Streaming por chunks")] = False,
     accept: Annotated[str | None, Header(description="Tipo de contenido esperado")] = None,
     tts_service: TtsService = Depends(get_tts_service),
@@ -143,8 +160,14 @@ async def synthesize_tts(
                 )
         finally:
             pool.release()
-    except (VoiceNotFoundError, UnsupportedLanguageError, UnsupportedInstructError,
-            EngineUnavailableError, FeatureNotSupportedError) as e:
+    except (
+        VoiceNotFoundError,
+        UnsupportedLanguageError,
+        UnsupportedInstructError,
+        UnsupportedEmotionError,
+        EngineUnavailableError,
+        FeatureNotSupportedError,
+    ) as e:
         _handle_tts_error(e)
     except Exception as e:
         _handle_tts_error(e)
@@ -171,10 +194,15 @@ async def synthesize_tts(
 )
 async def synthesize_instruct(
     text: Annotated[str, Body(min_length=1, description="Texto a sintetizar")],
-    instruct: Annotated[str, Body(description="Instruct de voice design (ej: 'female, young adult, british accent')")],
+    instruct: Annotated[
+        str,
+        Body(description="Instruct de voice design (ej: 'female, young adult, british accent')"),
+    ],
     language: Annotated[str, Body(description="Idioma del texto (ISO 639-1)")],
     speed: Annotated[float, Body(ge=0.5, le=2.0, description="Velocidad de habla")] = 1.0,
-    emotion: Annotated[str | None, Body(description="Emoción (solo engines que la soporten)")] = None,
+    emotion: Annotated[
+        str | None, Body(description="Emoción (solo engines que la soporten)")
+    ] = None,
     stream: Annotated[bool, Query(description="Streaming por chunks")] = False,
     accept: Annotated[str | None, Header(description="Tipo de contenido esperado")] = None,
     tts_service: TtsService = Depends(get_tts_service),
@@ -193,8 +221,13 @@ async def synthesize_instruct(
             )
         finally:
             pool.release()
-    except (UnsupportedLanguageError, UnsupportedInstructError,
-            EngineUnavailableError, FeatureNotSupportedError) as e:
+    except (
+        UnsupportedLanguageError,
+        UnsupportedInstructError,
+        UnsupportedEmotionError,
+        EngineUnavailableError,
+        FeatureNotSupportedError,
+    ) as e:
         _handle_tts_error(e)
     except Exception as e:
         _handle_tts_error(e)
@@ -220,12 +253,13 @@ async def get_voice_design_tokens() -> dict:
     Returns empty categories if the active engine does not support voice design.
     """
     from omnivoice_api.settings import get_settings
+
     settings = get_settings()
 
     if settings.TTS_ENGINE != "omnivoice":
         return {
             "note": f"Voice design no soportado por el engine '{settings.TTS_ENGINE}'. "
-                    "Cambia TTS_ENGINE=omnivoice para usar voice design.",
+            "Cambia TTS_ENGINE=omnivoice para usar voice design.",
             "gender": [],
             "age": [],
             "pitch": [],
@@ -240,12 +274,29 @@ async def get_voice_design_tokens() -> dict:
         "pitch": ["very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch"],
         "style": ["whisper"],
         "english_accent": [
-            "american accent", "australian accent", "british accent", "canadian accent",
-            "chinese accent", "indian accent", "japanese accent", "korean accent",
-            "portuguese accent", "russian accent",
+            "american accent",
+            "australian accent",
+            "british accent",
+            "canadian accent",
+            "chinese accent",
+            "indian accent",
+            "japanese accent",
+            "korean accent",
+            "portuguese accent",
+            "russian accent",
         ],
         "chinese_dialect": [
-            "河南话", "陕西话", "四川话", "贵州话", "云南话", "桂林话",
-            "济南话", "石家庄话", "甘肃话", "宁夏话", "青岛话", "东北话",
+            "河南话",
+            "陕西话",
+            "四川话",
+            "贵州话",
+            "云南话",
+            "桂林话",
+            "济南话",
+            "石家庄话",
+            "甘肃话",
+            "宁夏话",
+            "青岛话",
+            "东北话",
         ],
     }

@@ -1,8 +1,8 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
-from typing import Literal
+import json
 from pathlib import Path
-import os
+from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # Multi-engine routing (when TTS_ENGINE=routed)
     # JSON dict mapping language codes to engine names.
     # Use "_default" for fallback when language has no explicit mapping.
-    # Example: {"es":"pocket_tts","en":"pocket_tts","ca":"edgetts","_default":"pocket_tts"}
+    # Ejemplo de mapeo: es a pocket_tts, en a pocket_tts, ca a edgetts, y _default a pocket_tts.
     TTS_ENGINES: str = ""
 
     # Pocket TTS config (when TTS_ENGINE=pocket_tts)
@@ -83,19 +83,34 @@ class Settings(BaseSettings):
     @property
     def python_bin(self) -> Path:
         """Ruta al python del venv externo de OmniVoice."""
-        from omnivoice_api.core.engine_paths import python_bin_from_venv, default_venv_dir
+        from omnivoice_api.core.engine_paths import default_venv_dir, python_bin_from_venv
+
         return python_bin_from_venv(default_venv_dir())
 
     @property
     def model_path(self) -> Path:
         """Ruta al modelo OmniVoice descargado."""
         from omnivoice_api.core.engine_paths import default_install_dir
+
         return default_install_dir() / "models"
 
     @property
     def omnilang_list(self) -> list[str]:
-        """Idiomas soportados por OmniVoice."""
-        return ["es", "en", "fr", "de", "it", "pt", "zh", "ja", "ko"]
+        """Idiomas soportados por OmniVoice.
+
+        Cuando el engine es ``routed``, se amplía con los idiomas declarados
+        en ``TTS_ENGINES`` (p.ej. ``ca``) para que el validado de idioma del
+        servicio no bloquee el routing.
+        """
+        langs = ["es", "en", "fr", "de", "it", "pt", "zh", "ja", "ko"]
+        if self.TTS_ENGINE == "routed" and self.TTS_ENGINES.strip():
+            try:
+                routing = json.loads(self.TTS_ENGINES)
+            except json.JSONDecodeError:
+                routing = {}
+            if isinstance(routing, dict):
+                langs.extend(code for code in routing if code and code != "_default")
+        return sorted(set(langs))
 
 
 def get_settings() -> Settings:

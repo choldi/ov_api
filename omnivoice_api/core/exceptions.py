@@ -5,6 +5,7 @@ from __future__ import annotations
 
 class OmniVoiceAPIError(Exception):
     """Excepción base para todos los errores de la API de OmniVoice."""
+
     pass
 
 
@@ -29,10 +30,24 @@ class UnsupportedLanguageError(OmniVoiceAPIError):
         )
 
 
+class UnsupportedEmotionError(OmniVoiceAPIError):
+    """Se lanza cuando se solicita una emoción no soportada."""
+
+    def __init__(self, emotion: str, supported_emotions: list[str]) -> None:
+        self.emotion = emotion
+        self.supported_emotions = supported_emotions
+        super().__init__(
+            f"Emoción no soportada: {emotion}. "
+            f"Emociones soportadas: {', '.join(supported_emotions)}"
+        )
+
+
 class UnsupportedInstructError(OmniVoiceAPIError):
     """Se lanza cuando el instruct contiene tokens no soportados por el modelo."""
 
-    def __init__(self, instruct: str, invalid_items: dict[str, str | None], valid_items: list[str]) -> None:
+    def __init__(
+        self, instruct: str, invalid_items: dict[str, str | None], valid_items: list[str]
+    ) -> None:
         self.instruct = instruct
         self.invalid_items = invalid_items
         self.valid_items = valid_items
