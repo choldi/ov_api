@@ -41,6 +41,7 @@ class VoiceRepository:
         """Initialize the database schema with engine column."""
         conn = await self._get_connection()
         try:
+            # Create tables (without engine-dependent index for migration case)
             await conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS cloned_voices (
@@ -54,6 +55,31 @@ class VoiceRepository:
                     metadata     TEXT                     -- JSON extendido
                 );
 
+                CREATE TABLE IF NOT EXISTS designed_voices (
+                    id           TEXT PRIMARY KEY,        -- UUIDv4
+                    name         TEXT NOT NULL UNIQUE,
+                    instruct     TEXT NOT NULL,           -- voice design instruct
+                    language     TEXT NOT NULL,           -- ISO 639-1
+                    created_at   TEXT NOT NULL,
+                    metadata     TEXT                     -- JSON extendido
+                );
+                """
+            )
+
+            # Migration: add engine column if missing (for pre-existing tables)
+            cursor = await conn.execute("PRAGMA table_info(cloned_voices)")
+            columns = {row[1] for row in await cursor.fetchall()}
+            if "engine" not in columns:
+                await conn.execute(
+                    "ALTER TABLE cloned_voices "
+                    "ADD COLUMN engine TEXT NOT NULL DEFAULT 'omnivoice'"
+                )
+                logger.info("Migrated cloned_voices: added engine column")
+            await conn.commit()
+
+            # Create indexes (after migration ensures columns exist)
+            await conn.executescript(
+                """
                 CREATE INDEX IF NOT EXISTS idx_cloned_voices_language
                 ON cloned_voices(language);
 
@@ -63,28 +89,10 @@ class VoiceRepository:
                 CREATE INDEX IF NOT EXISTS idx_cloned_voices_engine
                 ON cloned_voices(engine);
 
-                CREATE TABLE IF NOT EXISTS designed_voices (
-                    id           TEXT PRIMARY KEY,        -- UUIDv4
-                    name         TEXT NOT NULL UNIQUE,
-                    instruct     TEXT NOT NULL,           -- voice design instruct
-                    language     TEXT NOT NULL,           -- ISO 639-1
-                    created_at   TEXT NOT NULL,
-                    metadata     TEXT                     -- JSON extendido
-                );
-
                 CREATE INDEX IF NOT EXISTS idx_designed_voices_language
                 ON designed_voices(language);
                 """
             )
-            # Migration: add engine column if missing
-            cursor = await conn.execute("PRAGMA table_info(cloned_voices)")
-            columns = {row[1] for row in await cursor.fetchall()}
-            if "engine" not in columns:
-                await conn.execute(
-                    "ALTER TABLE cloned_voices "
-                    "ADD COLUMN engine TEXT NOT NULL DEFAULT 'omnivoice'"
-                )
-                logger.info("Migrated cloned_voices: added engine column")
             await conn.commit()
         finally:
             await conn.close()
