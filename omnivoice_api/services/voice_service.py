@@ -12,6 +12,7 @@ from loguru import logger
 from omnivoice_api.core.audio import AudioValidator
 from omnivoice_api.core.embedding_cache import EmbeddingCache, get_embedding_cache
 from omnivoice_api.core.exceptions import (
+    FeatureNotSupportedError,
     InvalidReferenceAudioError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
@@ -19,6 +20,9 @@ from omnivoice_api.core.exceptions import (
 from omnivoice_api.core.omnivoice_engine import _validate_instruct
 from omnivoice_api.repositories.voice_repository import VoiceRepository
 from omnivoice_api.settings import get_settings
+
+# Engines that support voice cloning from reference audio
+CLONE_CAPABLE_ENGINES = {"omnivoice", "pocket_tts"}
 
 
 class VoiceService:
@@ -36,6 +40,14 @@ class VoiceService:
         self._embedding_cache = embedding_cache
         self._initialized = repository is not None
 
+    @property
+    def _active_engine(self) -> str:
+        """Name of the active engine (handles routed)."""
+        engine = self._settings.TTS_ENGINE
+        if engine == "routed":
+            return "pocket_tts"
+        return engine
+
     async def initialize(self) -> None:
         """Initialize the service and its dependencies."""
         if self._repository is None:
@@ -43,7 +55,7 @@ class VoiceService:
             await self._repository.initialize()
 
         if self._audio_validator is None:
-            self._audio_validator = AudioValidator()
+            self._audio_validator = AudioValidator(engine_name=self._active_engine)
 
         if self._embedding_cache is None:
             self._embedding_cache = get_embedding_cache()
@@ -56,6 +68,7 @@ class VoiceService:
         language: str,
         reference_audio_path: Path | str,
         ref_text: str | None = None,
+        engine: str | None = None,
     ) -> str:
         """Clone a voice from reference audio.
 
@@ -63,6 +76,8 @@ class VoiceService:
             name: Unique name for the cloned voice
             language: Language code (ISO 639-1)
             reference_audio_path: Path to the reference audio file
+            ref_text: Transcription of the reference audio (optional, improves cloning)
+            engine: Engine to associate with this voice (defaults to active engine)
 
         Returns:
             str: The UUID of the cloned voice
@@ -71,13 +86,21 @@ class VoiceService:
             ValueError: If voice name already exists
             UnsupportedLanguageError: If language is not supported
             InvalidReferenceAudioError: If reference audio is invalid
+            FeatureNotSupportedError: If the active engine doesn't support cloning
         """
+        engine = engine or self._active_engine
+
+        # Validate engine supports cloning
+        if engine not in CLONE_CAPABLE_ENGINES:
+            raise FeatureNotSupportedError("voice cloning", engine)
+
         # Validate language
         if language not in self._settings.omnilang_list:
             raise UnsupportedLanguageError(language, self._settings.omnilang_list)
 
-        # Validate and prepare reference audio
-        validated_path, duration_sec = await self._audio_validator.validate_and_prepare(
+        # Validate and prepare reference audio (engine-aware sample rate)
+        audio_validator = self._audio_validator or AudioValidator(engine_name=engine)
+        validated_path, duration_sec = await audio_validator.validate_and_prepare(
             reference_audio_path, language
         )
 
@@ -102,39 +125,42 @@ class VoiceService:
         if ref_text:
             metadata["ref_text"] = ref_text
 
-        # Store in repository
+        # Store in repository with engine tag
         voice_id = await self._repository.create(
             name=name,
             language=language,
             reference_path=str(dest_path),
             duration_sec=duration_sec,
             metadata=metadata,
+            engine=engine,
         )
 
         # Pre-compute and cache embedding
         try:
-            # TODO: Compute actual embedding when engine supports it
-            # For now, just invalidate any existing cache entry
             self._embedding_cache.invalidate(dest_path)
         except Exception as e:
             logger.warning(f"Failed to precompute embedding for {voice_id}: {e}")
 
-        logger.info(f"Voice cloned successfully: {name} ({voice_id})")
+        logger.info(f"Voice cloned successfully: {name} ({voice_id}, engine={engine})")
         return voice_id
 
     async def get_voice(self, voice_id: str) -> dict:
-        """Get a cloned voice by ID."""
-        return await self._repository.get_by_id(voice_id)
+        """Get a cloned voice by ID. Validates engine compatibility."""
+        voice = await self._repository.get_by_id(voice_id)
+        self._validate_engine(voice)
+        return voice
 
     async def list_voices(
-        self, language: str | None = None, limit: int = 100, offset: int = 0
+        self, language: str | None = None, limit: int = 100, offset: int = 0,
+        engine: str | None = None,
     ) -> list[dict]:
         """List cloned voices with optional filtering."""
-        return await self._repository.list(language=language, limit=limit, offset=offset)
+        return await self._repository.list(
+            language=language, limit=limit, offset=offset, engine=engine,
+        )
 
     async def delete_voice(self, voice_id: str) -> bool:
         """Delete a cloned voice."""
-        # Get voice info first to delete file and invalidate cache
         ref_path = None
         try:
             voice = await self._repository.get_by_id(voice_id)
@@ -144,10 +170,8 @@ class VoiceService:
         except VoiceNotFoundError:
             pass
 
-        # Delete from repository
         deleted = await self._repository.delete(voice_id)
 
-        # Invalidate cache using the reference audio path
         if deleted and ref_path is not None:
             with contextlib.suppress(Exception):
                 self._embedding_cache.invalidate(ref_path)
@@ -158,6 +182,30 @@ class VoiceService:
         """Check if a voice exists."""
         return await self._repository.voice_exists(voice_id)
 
+    def _validate_engine(self, voice: dict) -> None:
+        """Validate that the voice's engine is compatible with the active engine.
+
+        Raises:
+            FeatureNotSupportedError: If the voice belongs to a different engine.
+        """
+        voice_engine = voice.get("engine", "omnivoice")
+        active = self._active_engine
+
+        # For routed engines, accept voices from any clone-capable engine
+        if self._settings.TTS_ENGINE == "routed":
+            if voice_engine in CLONE_CAPABLE_ENGINES:
+                return
+
+        # Direct match or voice is from omnivoice (legacy default)
+        if voice_engine == active:
+            return
+
+        # Pocket TTS voices can't be used with OmniVoice and vice versa
+        raise FeatureNotSupportedError(
+            f"cloned voice (engine={voice_engine})",
+            active,
+        )
+
     # --- Designed voices (instruct-based presets) ---
 
     async def create_designed_voice(
@@ -166,15 +214,7 @@ class VoiceService:
         instruct: str,
         language: str,
     ) -> str:
-        """Create a designed voice from an instruct string.
-
-        Validates the instruct tokens before saving.
-
-        Raises:
-            ValueError: If voice name already exists
-            UnsupportedLanguageError: If language is not supported
-            UnsupportedInstructError: If instruct contains invalid tokens
-        """
+        """Create a designed voice from an instruct string."""
         if language not in self._settings.omnilang_list:
             raise UnsupportedLanguageError(language, self._settings.omnilang_list)
 

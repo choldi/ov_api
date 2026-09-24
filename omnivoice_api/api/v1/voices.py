@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
+from loguru import logger
 
 from omnivoice_api.core.engine_client import OmniVoiceEngineClient, StockVoice
 from omnivoice_api.core.exceptions import (
+    FeatureNotSupportedError,
     InvalidReferenceAudioError,
     UnsupportedInstructError,
     UnsupportedLanguageError,
@@ -93,6 +96,16 @@ async def clone_voice(
         tmp_file_path = Path(tmp_file.name)
 
     try:
+        # Auto-transcribe if ref_text not provided and auto-transcribe is enabled
+        if not ref_text:
+            from omnivoice_api.services import transcription
+            if transcription.is_available():
+                ref_text = await asyncio.to_thread(
+                    transcription.transcribe, tmp_file_path, language
+                )
+                if ref_text:
+                    logger.info("Auto-transcribed reference audio: %s", ref_text[:80])
+
         # Clone the voice
         voice_id = await voice_service.clone_voice(
             name=name,
@@ -105,12 +118,23 @@ async def clone_voice(
             "voice_id": voice_id,
             "name": name,
             "language": language,
+            "ref_text": ref_text,
             "message": f"Voz '{name}' clonada exitosamente",
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except (UnsupportedLanguageError, InvalidReferenceAudioError) as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+    except FeatureNotSupportedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "detail": str(e),
+                "error_type": "feature_not_supported",
+                "feature": e.feature,
+                "engine": e.engine,
+            },
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error interno: {e!s}"
@@ -123,6 +147,7 @@ async def clone_voice(
 @router.get("/cloned", response_model=list[dict])
 async def list_cloned_voices(
     language: str | None = Query(None, description="Filtrar por idioma (ISO 639-1)"),
+    engine: str | None = Query(None, description="Filtrar por engine (pocket_tts, omnivoice)"),
     limit: int = Query(100, ge=1, le=1000, description="Límite de resultados"),
     offset: int = Query(0, ge=0, description="Desplazamiento para paginación"),
     voice_service: VoiceService = Depends(get_voice_service),
@@ -131,10 +156,13 @@ async def list_cloned_voices(
     Lista las voces clonadas disponibles.
 
     - **language**: Filtrar por idioma (ISO 639-1)
+    - **engine**: Filtrar por engine (pocket_tts, omnivoice)
     - **limit**: Número máximo de resultados (1-1000)
     - **offset**: Desplazamiento para paginación
     """
-    return await voice_service.list_voices(language=language, limit=limit, offset=offset)
+    return await voice_service.list_voices(
+        language=language, limit=limit, offset=offset, engine=engine,
+    )
 
 
 @router.get("/cloned/{voice_id}", response_model=dict)

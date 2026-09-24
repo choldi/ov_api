@@ -38,8 +38,7 @@ class VoiceRepository:
         return conn
 
     async def initialize(self) -> None:
-        """Initialize the database schema."""
-        # Get connection
+        """Initialize the database schema with engine column."""
         conn = await self._get_connection()
         try:
             await conn.executescript(
@@ -51,6 +50,7 @@ class VoiceRepository:
                     reference_path TEXT NOT NULL,
                     duration_sec REAL NOT NULL,
                     created_at   TEXT NOT NULL,
+                    engine       TEXT NOT NULL DEFAULT 'omnivoice',
                     metadata     TEXT                     -- JSON extendido
                 );
 
@@ -59,6 +59,9 @@ class VoiceRepository:
 
                 CREATE INDEX IF NOT EXISTS idx_cloned_voices_created_at
                 ON cloned_voices(created_at);
+
+                CREATE INDEX IF NOT EXISTS idx_cloned_voices_engine
+                ON cloned_voices(engine);
 
                 CREATE TABLE IF NOT EXISTS designed_voices (
                     id           TEXT PRIMARY KEY,        -- UUIDv4
@@ -73,6 +76,15 @@ class VoiceRepository:
                 ON designed_voices(language);
                 """
             )
+            # Migration: add engine column if missing
+            cursor = await conn.execute("PRAGMA table_info(cloned_voices)")
+            columns = {row[1] for row in await cursor.fetchall()}
+            if "engine" not in columns:
+                await conn.execute(
+                    "ALTER TABLE cloned_voices "
+                    "ADD COLUMN engine TEXT NOT NULL DEFAULT 'omnivoice'"
+                )
+                logger.info("Migrated cloned_voices: added engine column")
             await conn.commit()
         finally:
             await conn.close()
@@ -85,6 +97,7 @@ class VoiceRepository:
         reference_path: str,
         duration_sec: float,
         metadata: dict | None = None,
+        engine: str = "omnivoice",
     ) -> str:
         """Create a new cloned voice record.
 
@@ -94,6 +107,7 @@ class VoiceRepository:
             reference_path: Path to the reference audio file
             duration_sec: Duration of the reference audio in seconds
             metadata: Optional metadata as dictionary
+            engine: Engine that created this voice (pocket_tts, omnivoice, edgetts)
 
         Returns:
             str: The UUID of the created voice record
@@ -111,13 +125,13 @@ class VoiceRepository:
             await conn.execute(
                 """
                 INSERT INTO cloned_voices 
-                (id, name, language, reference_path, duration_sec, created_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (id, name, language, reference_path, duration_sec, created_at, engine, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (voice_id, name, language, reference_path, duration_sec, now, metadata_json),
+                (voice_id, name, language, reference_path, duration_sec, now, engine, metadata_json),
             )
             await conn.commit()
-            logger.info(f"Created cloned voice '{name}' with ID {voice_id}")
+            logger.info(f"Created cloned voice '{name}' with ID {voice_id} (engine={engine})")
             return voice_id
         except aiosqlite.IntegrityError as e:
             if "UNIQUE constraint failed: cloned_voices.name" in str(e):
@@ -145,7 +159,7 @@ class VoiceRepository:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 """
-                SELECT id, name, language, reference_path, duration_sec, created_at, metadata
+                SELECT id, name, language, reference_path, duration_sec, created_at, engine, metadata
                 FROM cloned_voices
                 WHERE id = ?
                 """,
@@ -162,6 +176,7 @@ class VoiceRepository:
                 "language": row["language"],
                 "reference_path": row["reference_path"],
                 "duration_sec": row["duration_sec"],
+                "engine": row["engine"],
                 "created_at": row["created_at"],
                 "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
             }
@@ -186,7 +201,7 @@ class VoiceRepository:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 """
-                SELECT id, name, language, reference_path, duration_sec, created_at, metadata
+                SELECT id, name, language, reference_path, duration_sec, created_at, engine, metadata
                 FROM cloned_voices
                 WHERE name = ?
                 """,
@@ -203,6 +218,7 @@ class VoiceRepository:
                 "language": row["language"],
                 "reference_path": row["reference_path"],
                 "duration_sec": row["duration_sec"],
+                "engine": row["engine"],
                 "created_at": row["created_at"],
                 "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
             }
@@ -210,7 +226,8 @@ class VoiceRepository:
             await conn.close()
 
     async def list(
-        self, language: str | None = None, limit: int = 100, offset: int = 0
+        self, language: str | None = None, limit: int = 100, offset: int = 0,
+        engine: str | None = None,
     ) -> list[dict]:
         """List voices with optional filtering.
 
@@ -218,6 +235,7 @@ class VoiceRepository:
             language: Filter by language (ISO 639-1)
             limit: Maximum number of results
             offset: Number of results to skip
+            engine: Filter by engine (pocket_tts, omnivoice, edgetts)
 
         Returns:
             list[dict]: List of voice dictionaries
@@ -227,27 +245,28 @@ class VoiceRepository:
         try:
             conn.row_factory = aiosqlite.Row
 
+            conditions = []
+            params: list = []
             if language:
-                cursor = await conn.execute(
-                    """
-                    SELECT id, name, language, reference_path, duration_sec, created_at, metadata
-                    FROM cloned_voices
-                    WHERE language = ?
-                    ORDER BY created_at DESC
-                    LIMIT ? OFFSET ?
-                    """,
-                    (language, limit, offset),
-                )
-            else:
-                cursor = await conn.execute(
-                    """
-                    SELECT id, name, language, reference_path, duration_sec, created_at, metadata
-                    FROM cloned_voices
-                    ORDER BY created_at DESC
-                    LIMIT ? OFFSET ?
-                    """,
-                    (limit, offset),
-                )
+                conditions.append("language = ?")
+                params.append(language)
+            if engine:
+                conditions.append("engine = ?")
+                params.append(engine)
+
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            params.extend([limit, offset])
+
+            cursor = await conn.execute(
+                f"""
+                SELECT id, name, language, reference_path, duration_sec, created_at, engine, metadata
+                FROM cloned_voices
+                {where}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                params,
+            )
 
             rows = await cursor.fetchall()
 
@@ -258,6 +277,7 @@ class VoiceRepository:
                     "language": row["language"],
                     "reference_path": row["reference_path"],
                     "duration_sec": row["duration_sec"],
+                    "engine": row["engine"],
                     "created_at": row["created_at"],
                     "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
                 }

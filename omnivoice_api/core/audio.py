@@ -12,13 +12,32 @@ from omnivoice_api.core.exceptions import InvalidReferenceAudioError
 from omnivoice_api.settings import get_settings
 
 
+# Sample rates required by each engine for reference audio
+ENGINE_SAMPLE_RATES: dict[str, int] = {
+    "pocket_tts": 24000,
+    "edgetts": 24000,
+    "omnivoice": 22050,
+    "mock": 22050,
+}
+
+
 class AudioValidator:
     """Validates and processes reference audio for voice cloning."""
 
-    def __init__(self):
+    def __init__(self, engine_name: str | None = None):
         self._settings = get_settings()
-        self._target_sample_rate = 22050
+        if engine_name is None:
+            engine_name = self._settings.TTS_ENGINE
+            # For routed engines, default to pocket_tts sample rate
+            if engine_name == "routed":
+                engine_name = "pocket_tts"
+        self._engine_name = engine_name
+        self._target_sample_rate = ENGINE_SAMPLE_RATES.get(engine_name, 22050)
         self._target_channels = 1
+
+    @property
+    def target_sample_rate(self) -> int:
+        return self._target_sample_rate
 
     async def validate_and_prepare(
         self,

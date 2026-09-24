@@ -64,6 +64,10 @@ pocket_tts = [
 edgetts = [
     "edge-tts>=7.0.0",
 ]
+# Auto-transcription of reference audio (optional)
+transcribe = [
+    "faster-whisper>=1.0.0",
+]
 # All engines
 all-engines = [
     "tts-api[omnivoice,pocket_tts,edgetts]",

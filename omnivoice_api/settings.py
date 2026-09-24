@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # EdgeTTS config (when TTS_ENGINE=edgetts)
     EDGETTS_VOICE_PREFIX: str = "es-MX"
 
+    # Auto-transcription of reference audio on voice clone (requires faster-whisper)
+    AUTO_TRANSCRIBE: bool = False
+    # Whisper model size: tiny, base, small, medium, large-v3
+    TRANSCRIBE_MODEL: str = "base"
+
     # --- OmniVoice Engine (legacy, kept for backward compat) ---
     OMNIVOICE_MODEL_ID: str = "ModelsLab/omnivoice-singing"
     OMNIVOICE_DTYPE: Literal["float16", "float32", "int8"] = "float16"
