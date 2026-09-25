@@ -259,8 +259,9 @@ class VoiceRepository:
                 conditions.append("language = ?")
                 params.append(language)
             if engine:
-                conditions.append("engine = ?")
-                params.append(engine)
+                # engine column stores comma-separated engines: "pocket_tts,omnivoice"
+                conditions.append("engine LIKE ?")
+                params.append(f"%{engine}%")
 
             where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             params.extend([limit, offset])

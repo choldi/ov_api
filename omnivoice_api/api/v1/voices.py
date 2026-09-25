@@ -64,7 +64,8 @@ async def list_stock_voices(
     summary="Clonar voz desde audio de referencia",
     description=(
         "Clona una voz a partir de un archivo de audio de referencia. "
-        "El audio debe ser WAV o FLAC, mono, 22050 Hz. "
+        "Especifica `engines` para asociar la voz a uno o más engines "
+        "(ej: 'pocket_tts' o 'pocket_tts,omnivoice'). "
         "La voz clonada se almacena y puede usarse en llamadas subsiguientes a /tts."
     ),
 )
@@ -76,6 +77,13 @@ async def clone_voice(
     ),
     ref_text: str | None = Form(
         None, description="Transcripción del audio de referencia (mejora calidad del clonado)"
+    ),
+    engines: str = Form(
+        "auto",
+        description=(
+            "Engine(s) para la voz: 'pocket_tts', 'omnivoice', "
+            "'pocket_tts,omnivoice' (separado por coma), o 'auto' (activa)"
+        ),
     ),
     voice_service: VoiceService = Depends(get_voice_service),
 ) -> dict:
@@ -106,18 +114,26 @@ async def clone_voice(
                 if ref_text:
                     logger.info("Auto-transcribed reference audio: %s", ref_text[:80])
 
+        # Parse engines param
+        if engines.strip().lower() in ("auto", "", "default"):
+            engine_param = None
+        else:
+            engine_param = engines.strip()
+
         # Clone the voice
         voice_id = await voice_service.clone_voice(
             name=name,
             language=language,
             reference_audio_path=tmp_file_path,
             ref_text=ref_text,
+            engine=engine_param,
         )
 
         return {
             "voice_id": voice_id,
             "name": name,
             "language": language,
+            "engines": engine_param or "auto",
             "ref_text": ref_text,
             "message": f"Voz '{name}' clonada exitosamente",
         }

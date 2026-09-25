@@ -68,7 +68,7 @@ class VoiceService:
         language: str,
         reference_audio_path: Path | str,
         ref_text: str | None = None,
-        engine: str | None = None,
+        engine: str | list[str] | None = None,
     ) -> str:
         """Clone a voice from reference audio.
 
@@ -77,7 +77,8 @@ class VoiceService:
             language: Language code (ISO 639-1)
             reference_audio_path: Path to the reference audio file
             ref_text: Transcription of the reference audio (optional, improves cloning)
-            engine: Engine to associate with this voice (defaults to active engine)
+            engine: Engine(s) to associate. Accepts "pocket_tts",
+                    "pocket_tts,omnivoice", or list. None = active engine.
 
         Returns:
             str: The UUID of the cloned voice
@@ -86,20 +87,34 @@ class VoiceService:
             ValueError: If voice name already exists
             UnsupportedLanguageError: If language is not supported
             InvalidReferenceAudioError: If reference audio is invalid
-            FeatureNotSupportedError: If the active engine doesn't support cloning
+            FeatureNotSupportedError: If an engine doesn't support cloning
         """
-        engine = engine or self._active_engine
+        # Parse engine(s)
+        if engine is None:
+            engine_str = self._active_engine
+        elif isinstance(engine, list):
+            engine_str = ",".join(engine)
+        else:
+            engine_str = engine.strip()
 
-        # Validate engine supports cloning
-        if engine not in CLONE_CAPABLE_ENGINES:
-            raise FeatureNotSupportedError("voice cloning", engine)
+        engine_list = [e.strip() for e in engine_str.split(",") if e.strip()]
+
+        # Validate each engine supports cloning
+        for e in engine_list:
+            if e not in CLONE_CAPABLE_ENGINES:
+                raise FeatureNotSupportedError("voice cloning", e)
 
         # Validate language
         if language not in self._settings.omnilang_list:
             raise UnsupportedLanguageError(language, self._settings.omnilang_list)
 
-        # Validate and prepare reference audio (engine-aware sample rate)
-        audio_validator = self._audio_validator or AudioValidator(engine_name=engine)
+        # Pick sample rate: 24000 if pocket_tts included (max quality), else 22050
+        if "pocket_tts" in engine_list:
+            validator_engine = "pocket_tts"
+        else:
+            validator_engine = engine_list[0]
+
+        audio_validator = AudioValidator(engine_name=validator_engine)
         validated_path, duration_sec = await audio_validator.validate_and_prepare(
             reference_audio_path, language
         )
@@ -125,14 +140,15 @@ class VoiceService:
         if ref_text:
             metadata["ref_text"] = ref_text
 
-        # Store in repository with engine tag
+        # Store in repository with engine tag (comma-separated)
+        engine_tag = ",".join(engine_list)
         voice_id = await self._repository.create(
             name=name,
             language=language,
             reference_path=str(dest_path),
             duration_sec=duration_sec,
             metadata=metadata,
-            engine=engine,
+            engine=engine_tag,
         )
 
         # Pre-compute and cache embedding
@@ -141,7 +157,9 @@ class VoiceService:
         except Exception as e:
             logger.warning(f"Failed to precompute embedding for {voice_id}: {e}")
 
-        logger.info(f"Voice cloned successfully: {name} ({voice_id}, engine={engine})")
+        logger.info(
+            f"Voice cloned successfully: {name} ({voice_id}, engines={engine_tag})"
+        )
         return voice_id
 
     async def get_voice(self, voice_id: str) -> dict:
@@ -183,26 +201,29 @@ class VoiceService:
         return await self._repository.voice_exists(voice_id)
 
     def _validate_engine(self, voice: dict) -> None:
-        """Validate that the voice's engine is compatible with the active engine.
+        """Validate that the voice's engine(s) include the active engine.
+
+        The voice's engine column stores comma-separated engines
+        (e.g. "pocket_tts,omnivoice").
 
         Raises:
-            FeatureNotSupportedError: If the voice belongs to a different engine.
+            FeatureNotSupportedError: If active engine not in voice's engine list.
         """
-        voice_engine = voice.get("engine", "omnivoice")
+        voice_engines_raw = voice.get("engine", "omnivoice")
+        voice_engines = {e.strip() for e in voice_engines_raw.split(",") if e.strip()}
         active = self._active_engine
 
-        # For routed engines, accept voices from any clone-capable engine
+        # For routed engines, accept voices tagged with any clone-capable engine
         if self._settings.TTS_ENGINE == "routed":
-            if voice_engine in CLONE_CAPABLE_ENGINES:
+            if voice_engines & CLONE_CAPABLE_ENGINES:
                 return
 
-        # Direct match or voice is from omnivoice (legacy default)
-        if voice_engine == active:
+        # Direct match: active engine is in the voice's engine list
+        if active in voice_engines:
             return
 
-        # Pocket TTS voices can't be used with OmniVoice and vice versa
         raise FeatureNotSupportedError(
-            f"cloned voice (engine={voice_engine})",
+            f"cloned voice (engines={voice_engines_raw})",
             active,
         )
 
