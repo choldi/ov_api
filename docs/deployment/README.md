@@ -1,75 +1,131 @@
-# Guía de Despliegue — OmniVoice API
+# Guía de Despliegue — TTS API (Multi-Engine)
+
+> **EN:** Deployment guide for the multi-engine TTS API. GPU is optional (only needed for OmniVoice engine).
 
 ## Requisitos previos
 
-- Python 3.12+
-- GPU NVIDIA con CUDA 12.4+ (para motor real)
-- OmniVoice instalado externamente
-- uv (package manager)
+- Python 3.11+
+- uv (package manager) — se instala automáticamente con `make check-uv`
+- **GPU NVIDIA con CUDA** — solo para `TTS_ENGINE=omnivoice`
+- **Internet** — para `TTS_ENGINE=edgetts` y descarga inicial de Pocket TTS
 
-## Despliegue con Docker
-
-### Construir la imagen
+## Instalación por engine
 
 ```bash
-docker build -t omnivoice-api .
+# Engine recomendado para CPU (clonado de voz)
+make install ENGINE=pocket_tts
+
+# Engine cloud (sin GPU, incluye catalán)
+make install ENGINE=edgetts
+
+# Engine GPU (full features: emociones, voice design)
+make install ENGINE=omnivoice
+
+# Todos los engines
+make install-all
 ```
 
-### Ejecutar
+## Configuración (.env)
 
 ```bash
-docker run -d \
-  --gpus all \
-  -p 8000:8000 \
-  -e OMNIVOICE_PATH=/path/to/omnivoice \
-  -e OMNIVOICE_FALLBACK_TO_MOCK=false \
-  -e API_KEY=tu-api-key-segura \
-  -e CORS_ORIGINS=https://tu-dominio.com \
-  --name omnivoice-api \
-  omnivoice-api
+cp .env.example .env
 ```
 
-### Variables de entorno
+### Variables de engine
 
 | Variable | Descripción | Default |
 |----------|-------------|---------|
-| `OMNIVOICE_MODEL_ID` | Modelo a usar (HuggingFace) | `ModelsLab/omnivoice-singing` |
-| `OMNIVOICE_PATH` | Ruta a la instalación de OmniVoice | Requerida |
-| `OMNIVOICE_FALLBACK_TO_MOCK` | Fallback a mock si el engine falla | `true` |
+| `TTS_ENGINE` | Engine activo: `pocket_tts`, `edgetts`, `omnivoice`, `mock`, `routed` | `omnivoice` |
+| `TTS_ENGINES` | JSON routing por idioma (cuando `routed`) | `""` |
+| `POCKET_TTS_MODEL` | Modelo Pocket TTS | `kyutai/pocket-tts-100m-en` |
+| `EDGETTS_VOICE_PREFIX` | Locale EdgeTTS | `es-MX` |
+| `AUTO_TRANSCRIBE` | Auto-transcribir audio de referencia | `false` |
+
+### Variables comunes
+
+| Variable | Descripción | Default |
+|----------|-------------|---------|
 | `API_KEY` | API key opcional (vacío = sin auth) | `""` |
-| `CORS_ORIGINS` | Orígenes CORS permitidos (separados por coma) | `*` |
-| `DATABASE_URL` | URL de SQLite para voces clonadas | `sqlite+aiosqlite:///storage/omnivoice.db` |
+| `CORS_ORIGINS` | Orígenes CORS permitidos | `*` |
+| `DATABASE_URL` | URL de SQLite para voces clonadas | `sqlite:///storage/omnivoice.db` |
+| `LOG_LEVEL` | Nivel de logging | `INFO` |
+
+### Variables OmniVoice (solo `TTS_ENGINE=omnivoice`)
+
+| Variable | Descripción | Default |
+|----------|-------------|---------|
+| `OMNIVOICE_MODEL_ID` | Modelo HuggingFace | `ModelsLab/omnivoice-singing` |
+| `OMNIVOICE_DEVICE` | Dispositivo de inferencia | `cuda:0` |
+| `OMNIVOICE_FALLBACK_TO_MOCK` | Fallback a mock si falla | `true` |
+
+## Despliegue con Docker
+
+```bash
+# Construir
+docker build -t tts-api .
+
+# Ejecutar con Pocket TTS (sin GPU)
+docker run -d \
+  -p 8000:8000 \
+  -e TTS_ENGINE=pocket_tts \
+  -e API_KEY=tu-api-key \
+  -v ./storage:/app/storage \
+  --name tts-api \
+  tts-api
+
+# Ejecutar con OmniVoice (con GPU)
+docker run -d \
+  --gpus all \
+  -p 8000:8000 \
+  -e TTS_ENGINE=omnivoice \
+  -e OMNIVOICE_PATH=/path/to/omnivoice \
+  -v ./storage:/app/storage \
+  --name tts-api \
+  tts-api
+```
+
+## Despliegue con routed engine (recomendado para podcasts)
+
+Enrutamiento por idioma: es/en/fr → Pocket TTS (CPU, clonado), ca → EdgeTTS (cloud):
+
+```bash
+# 1. Instalar todos los engines
+make install-all
+
+# 2. Configurar en .env
+cat >> .env << EOF
+TTS_ENGINE=routed
+TTS_ENGINES={"es":"pocket_tts","en":"pocket_tts","fr":"pocket_tts","ca":"edgetts","_default":"pocket_tts"}
+EOF
+
+# 3. Iniciar
+make run
+```
 
 ## Despliegue sin Docker (Linux)
 
-### Instalar dependencias
+### Instalar
 
 ```bash
-# Instalar uv
 pip install uv
-
-# Instalar proyecto
-uv sync
-
-# Instalar OmniVoice (si no está instalado)
-pip install git+https://github.com/omnivoice/omnivoice.git
+make install ENGINE=pocket_tts
 ```
 
 ### Ejecutar con systemd
 
-Crear `/etc/systemd/system/omnivoice-api.service`:
+Crear `/etc/systemd/system/tts-api.service`:
 
 ```ini
 [Unit]
-Description=OmniVoice API
+Description=TTS API (Multi-Engine)
 After=network.target
 
 [Service]
 Type=simple
-user=omnivoice
-workingdirectory=/opt/omnivoice-api
-environment=OMNIVOICE_PATH=/opt/omnivoice
-ExecStart=/opt/omnivoice-api/.venv/bin/uvicorn omnivoice_api.main:app --host 0.0.0.0 --port 8000
+user=tts-api
+workingdirectory=/opt/tts-api
+Environment=TTS_ENGINE=pocket_tts
+ExecStart=/opt/tts-api/.venv/bin/uvicorn omnivoice_api.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
 
@@ -77,55 +133,42 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Habilitar e iniciar:
-
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable omnivoice-api
-sudo systemctl start omnivoice-api
-```
-
-## Despliegue en Windows (Windows Service)
-
-Usar [NSSM](https://nssm.cc/) o [WinSW](https://github.com/winsw/winsw):
-
-```bash
-# Con NSSM
-nssm install OmniVoiceAPI C:\Python312\python.exe -m uvicorn omnivoice_api.main:app --host 0.0.0.0 --port 8000
-nssm set OmniVoiceAPI AppDirectory C:\omnivoice-api
-nssm set OmniVoiceAPI AppEnvironment OMNIVOICE_PATH=C:\omnivoice
-nssm start OmniVoiceAPI
+sudo systemctl enable tts-api
+sudo systemctl start tts-api
 ```
 
 ## Verificación post-despliegue
 
 ```bash
-# Health check
+# Health check (muestra engine activo)
 curl http://localhost:8000/api/v1/health
+# → {"status":"ok", "engine":"routed(edgetts, pocket_tts)", ...}
 
 # Liveness
 curl http://localhost:8000/api/v1/health/live
 
-# Readiness
-curl http://localhost:8000/api/v1/health/ready
-
 # Listar voces stock
 curl http://localhost:8000/api/v1/voices/stock
 
-# Listar emociones soportadas
-curl http://localhost:8000/api/v1/emotions
-
-# Probar TTS
+# Probar TTS en español (Pocket TTS)
 curl -X POST http://localhost:8000/api/v1/tts \
   -H "Content-Type: application/json" \
-  -d '{"text":"Hola mundo","voice_id":"es-mx-male","language":"es"}' \
-  --output test.wav
+  -d '{"text":"Hola mundo","voice_id":"es-mx-female","language":"es"}' \
+  --output test_es.wav
 
-# Probar TTS con emoción
+# Probar TTS en catalán (EdgeTTS)
 curl -X POST http://localhost:8000/api/v1/tts \
   -H "Content-Type: application/json" \
-  -d '{"text":"¡Qué alegría!","voice_id":"es-mx-male","language":"es","emotion":"happy"}' \
-  --output happy.wav
+  -d '{"text":"Bon dia","voice_id":"ca-female","language":"ca"}' \
+  --output test_ca.wav
+
+# Clonar voz para ambos engines
+curl -X POST http://localhost:8000/api/v1/voices/clone \
+  -F "name=mi_voz" -F "language=es" \
+  -F "reference_audio=@voz.wav" \
+  -F "engines=pocket_tts,omnivoice"
 ```
 
 ## Monitoreo
@@ -133,3 +176,7 @@ curl -X POST http://localhost:8000/api/v1/tts \
 - **Métricas**: `GET /metrics` (Prometheus)
 - **Docs**: `GET /docs` (Swagger UI)
 - **OpenAPI**: `GET /openapi.json`
+
+---
+
+**EN:** Install with `make install ENGINE=<engine>`. Set `TTS_ENGINE` in `.env`. For language-based routing (e.g., Spanish→PocketTTS, Catalan→EdgeTTS), use `TTS_ENGINE=routed` with `TTS_ENGINES` JSON mapping.

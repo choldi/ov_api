@@ -2,6 +2,38 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/es/1.1.0/)
 
+## [0.8.0] - 2026-09-25
+
+### Added
+- **Multi-engine voice cloning**: parámetro `engines` en `POST /voices/clone` (ej: `engines=pocket_tts,omnivoice`)
+- Columna `engine` en tabla `cloned_voices` (lista separada por comas) con migración automática
+- Filtro `?engine=` en `GET /voices/cloned` (usa LIKE para voces multi-engine)
+- `FeatureNotSupportedError` para voces clonadas de engine incorrecto (HTTP 400)
+- **Auto-transcripción** de audio de referencia con `faster-whisper` (opcional, `AUTO_TRANSCRIBE=true`)
+- `AudioValidator` engine-aware: 24000Hz para pocket_tts, 22050Hz para omnivoice
+- `OmniVoiceAdapter` resamplea referencia 24kHz→22.05kHz en tiempo de síntesis
+
+## [0.7.0] - 2026-09-20
+
+### Added
+- **Multi-engine TTS**: soporte para Pocket TTS, EdgeTTS y OmniVoice bajo una misma API
+- `TtsEngineBase` ABC + `EngineCapabilities` (sistema de capacidades por engine)
+- `engine_factory.py` con selección via `TTS_ENGINE` env var
+- **PocketTTSEngine** (`pocket-tts`): CPU, clonado de voz, es/en/fr, 24000Hz
+- **EdgeTTSEngine** (`edge-tts`): cloud, 400+ voces incluyendo catalán (ca-ES), sin clonado
+- **MockEngine**: tonos de prueba (extraído de OmniVoiceEngine)
+- **RoutedEngine**: enrutado por idioma con `TTS_ENGINES` JSON (ej: es→pocket_tts, ca→edgetts)
+- `OmniVoiceAdapter`: envuelve el engine OmniVoice legacy en la nueva interfaz
+- Makefile: `ENGINE` variable (`make install ENGINE=pocket_tts`)
+- pyproject.toml: dependencias opcionales `[omnivoice]`, `[pocket_tts]`, `[edgetts]`, `[all-engines]`
+- `FeatureNotSupportedError` para features no soportadas por un engine
+
+### Changed
+- torch/torchaudio movidos de dependencias base a grupo opcional `[omnivoice]`
+- API endpoints refactorizados para ser engine-agnostic (sin GenerationParams en request)
+- Health endpoint muestra `engine` activo (ej: `routed(edgetts, pocket_tts)`)
+- `engine_client.py` refactorizado para aceptar cualquier `TtsEngineBase`
+
 ## [0.6.0] - 2026-09-12
 
 ### Added

@@ -1,12 +1,15 @@
-# OmniVoice API - Especificación Simplificada
+# TTS API - Especificación Simplificada
+
+> **EN:** REST API for multilingual TTS with multiple engine backends (Pocket TTS, EdgeTTS, OmniVoice). Same API surface regardless of active engine.
 
 ## Resumen
 
-API REST para síntesis de voz (TTS) con soporte para voces stock, clonado zero-shot, voice design y conversaciones multi-voz.
+API REST multi-engine para síntesis de voz (TTS) con soporte para voces stock, clonado de voz multi-engine, voice design y conversaciones multi-voz.
 
 **Base URL:** `/api/v1`  
 **Formato:** JSON (requests) / audio/wav (responses de audio)  
-**Autenticación:** Opcional `X-API-Key` header
+**Autenticación:** Opcional `X-API-Key` header  
+**Engine activo:** Se configura via `TTS_ENGINE` env var (`pocket_tts`, `edgetts`, `omnivoice`, `mock`, `routed`)
 
 ---
 
@@ -24,14 +27,16 @@ API REST para síntesis de voz (TTS) con soporte para voces stock, clonado zero-
 ```json
 {
   "status": "ok",
-  "version": "0.1.0",
-  "device": "cuda:0",
-  "mode": "REAL",
-  "real_engine_error": null
+  "version": "0.2.0",
+  "engine": "routed(edgetts, pocket_tts)",
+  "device": "routed",
+  "mode": "ROUTED",
+  "stock_voices_count": 28,
+  "gpu_available": false
 }
 ```
 
-`status` es `"ok"` cuando el modelo está cargado, `"degraded"` si está en modo mock o sin modelo.
+`status` es `"ok"` cuando el modelo está cargado, `"degraded"` si está en modo mock o sin modelo. El campo `engine` indica el engine activo.
 
 **GET `/health/live` — Response 200:**
 ```json
@@ -43,8 +48,8 @@ API REST para síntesis de voz (TTS) con soporte para voces stock, clonado zero-
 {
   "status": "ready",
   "checks": {
-    "install_dir_exists": true,
-    "venv_python_exists": true,
+    "engine_initialized": true,
+    "engine": "routed(edgetts, pocket_tts)",
     "model_loaded": true
   }
 }
@@ -98,17 +103,7 @@ API REST para síntesis de voz (TTS) con soporte para voces stock, clonado zero-
   "language": "es",
   "speed": 1.0,
   "instruct": null,
-  "emotion": null,
-  "num_step": 32,
-  "denoise": true,
-  "guidance_scale": 2.0,
-  "duration": null,
-  "preprocess_prompt": true,
-  "postprocess_output": true,
-  "pad_duration": 0.1,
-  "fade_duration": 0.1,
-  "audio_chunk_duration": 15.0,
-  "audio_chunk_threshold": 30.0
+  "emotion": null
 }
 ```
 
@@ -119,23 +114,15 @@ API REST para síntesis de voz (TTS) con soporte para voces stock, clonado zero-
 | `voice_id` | string | Sí | - | ID de voz (stock o clonada) |
 | `language` | string | Sí | - | ISO 639-1 |
 | `speed` | float | No | 1.0 | Velocidad (0.5 - 2.0) |
-| `instruct` | string \| null | No | null | Instruct de voice design libre (ej: `"female, young adult, whisper"`) |
-| `emotion` | string \| null | No | null | Emoción a aplicar: `happy`, `sad`, `angry`, `excited`, `calm`, `nervous`, `whisper`, `singing` |
-| `num_step` | int | No | 32 | Pasos de unmasking (1-100, mayor = mejor calidad) |
-| `denoise` | bool | No | true | Aplicar denoise para voz más limpia |
-| `guidance_scale` | float | No | 2.0 | Classifier-free guidance (0.0-10.0) |
-| `duration` | float \| null | No | null | Duración fija en segundos (0.5-120.0, sobrescribe speed) |
-| `preprocess_prompt` | bool | No | true | Preprocesar audio de referencia |
-| `postprocess_output` | bool | No | true | Eliminar silencios largos del output |
-| `pad_duration` | float | No | 0.1 | Silencio por lado en segundos (0.0-1.0) |
-| `fade_duration` | float | No | 0.1 | Duración fade-in/out en segundos (0.0-1.0) |
-| `audio_chunk_duration` | float | No | 15.0 | Duración target por chunk (1.0-60.0s) |
-| `audio_chunk_threshold` | float | No | 30.0 | Umbral para activar chunking (5.0-120.0s) |
+| `instruct` | string \| null | No | null | Instruct de voice design (solo OmniVoice) |
+| `emotion` | string \| null | No | null | Emoción (solo OmniVoice): `happy`, `sad`, `angry`, `excited`, `calm`, `nervous`, `whisper`, `singing` |
+
+> Los parámetros de generación avanzados (`num_step`, `guidance_scale`, etc.) ya no se envían en la request. El engine los maneja internamente.
 
 **Response 200:** `audio/wav`
 
 **Errores:**
-- 400: Texto vacío, instruct inválido (token no soportado)
+- 400: Texto vacío, instruct inválido, emoción no soportada, feature no soportada por engine
 - 404: Voz no encontrada
 - 400: Idioma no soportado
 - 503: Motor no disponible
@@ -261,9 +248,13 @@ Las emociones se aplican como **tags de texto** (prefijos) en el contenido a sin
 
 | Campo | Tipo | Requerido | Descripción |
 |-------|------|-----------|-------------|
-| `reference_audio` | file | Sí | Audio WAV/FLAC (5-30s, mono, 22050Hz) |
+| `reference_audio` | file | Sí | Audio WAV/FLAC (5-30s) |
 | `name` | string | Sí | Nombre único (3-64 chars, `^[a-zA-Z0-9_-]+$`) |
 | `language` | string | Sí | ISO 639-1 |
+| `ref_text` | string | No | Transcripción del audio (mejora calidad) |
+| `engines` | string | No | Engines para la voz: `pocket_tts`, `omnivoice`, `pocket_tts,omnivoice`, o `auto` (default) |
+
+> **EN:** `engines` accepts comma-separated engine names to tag the voice for multiple engines at once. `auto` uses the active engine.
 
 **Response 201:**
 ```json
@@ -271,11 +262,14 @@ Las emociones se aplican como **tags de texto** (prefijos) en el contenido a sin
   "voice_id": "uuid-v4",
   "name": "mi-voz",
   "language": "es",
+  "engines": "pocket_tts,omnivoice",
+  "ref_text": "Transcripción del audio",
   "message": "Voz 'mi-voz' clonada exitosamente"
 }
 ```
 
 **Errores:**
+- 400: Feature no soportada por engine (ej: clonado en EdgeTTS)
 - 409: Nombre de voz duplicado
 - 422: Idioma no soportado o audio de referencia inválido
 
@@ -283,10 +277,11 @@ Las emociones se aplican como **tags de texto** (prefijos) en el contenido a sin
 
 **Query params:**
 - `language` (opcional): Filtrar por ISO 639-1
+- `engine` (opcional): Filtrar por engine (ej: `pocket_tts`, `omnivoice`)
 - `limit` (default 100, max 1000)
 - `offset` (default 0)
 
-**Response 200:** `array` de voces clonadas
+**Response 200:** `array` de voces clonadas (cada una incluye campo `engine`)
 
 #### GET `/voices/cloned/{voice_id}`
 
@@ -354,11 +349,13 @@ Todos los errores devuelven JSON con `detail` y `error_type`:
 |--------|--------------|--------|
 | 400 | `unsupported_instruct` | Token de instruct no soportado |
 | 400 | `unsupported_language` | Idioma no soportado |
+| 400 | `unsupported_emotion` | Emoción no soportada |
+| 400 | `feature_not_supported` | Feature no soportada por el engine activo |
 | 400 | `validation_error` | Parámetros inválidos (texto vacío, turnos insuficientes) |
 | 404 | `voice_not_found` | Voz stock o clonada no existe |
 | 409 | - | Nombre de voz duplicado al clonar |
 | 422 | - | Audio de referencia inválido |
-| 503 | `engine_unavailable` | Motor ocupado / VRAM OOM |
+| 503 | `engine_unavailable` | Motor ocupado / no disponible |
 | 500 | `internal_error` | Error inesperado |
 
 ---
@@ -417,12 +414,27 @@ curl -X POST "http://localhost:8000/api/v1/tts/instruct" \
   --output output.wav
 ```
 
-### cURL - Clonar voz
+### cURL - Clonar voz para múltiples engines
 ```bash
 curl -X POST "http://localhost:8000/api/v1/voices/clone" \
   -F "reference_audio=@reference.wav" \
   -F "name=mi-voz" \
-  -F "language=es"
+  -F "language=es" \
+  -F "engines=pocket_tts,omnivoice" \
+  -F "ref_text=Transcripción del audio"
+```
+
+### cURL - TTS en catalán (EdgeTTS)
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Bon dia, això és una prova.", "voice_id": "ca-female", "language": "ca"}' \
+  --output catala.wav
+```
+
+### cURL - Listar voces por engine
+```bash
+curl "http://localhost:8000/api/v1/voices/cloned?engine=pocket_tts"
 ```
 
 ### cURL - Conversación

@@ -1,15 +1,21 @@
 # CONVENTIONS.md
 
+> **EN:** Code conventions for the multi-engine TTS API.
+
 ## 1. Stack tecnológico
 
 - Python: 3.11+
 - Framework HTTP: FastAPI + Uvicorn (asyncio)
-- TTS Engine: ModelsLab/omnivoice-singing (finetune de k2-fsa/OmniVoice) sobre PyTorch + CUDA (NVIDIA P2000, 5 GB VRAM)
+- **TTS Engines** (multi-engine, seleccionable via `TTS_ENGINE`):
+  - Pocket TTS (`pocket_tts`) — CPU, clonado de voz, es/en/fr
+  - EdgeTTS (`edgetts`) — Cloud, 400+ voces incl. catalán
+  - OmniVoice (`omnivoice`) — GPU, emociones, voice design
+  - Mock (`mock`) — Tonos de prueba
 - Validación: Pydantic v2
-- Persistencia: SQLite (metadatos) + filesystem (audio). Reservado slot para migrar a Postgres.
+- Persistencia: SQLite (metadatos) + filesystem (audio)
 - Testing: pytest + pytest-asyncio + httpx (AsyncClient) + pytest-cov
 - Calidad: ruff (lint+format), mypy (strict en src/)
-- Empaquetado: Poetry o uv + pyproject.toml
+- Empaquetado: uv + pyproject.toml (dependencias opcionales por engine)
 
 ## 2. Estilo de código
 
@@ -25,10 +31,11 @@
 
 ## 3. Estructura por capas
 
-api → services → repositories → core(engine) → models
+api → services → repositories → core(engines) → models
 
-- La capa api no importa omnivoice directamente.
-- La capa core es la única que sabe hablar con el engine OmniVoice.
+- La capa api no importa engines directamente.
+- La capa core es la única que sabe hablar con los engines (via `TtsEngineBase`).
+- `engine_factory.create_engine()` instancia el engine según `TTS_ENGINE`.
 - services orquesta casos de uso, no conoce HTTP.
 - repositories abstrae persistencia (fácil de cambiar SQLite → Postgres).
 
@@ -58,8 +65,9 @@ api → services → repositories → core(engine) → models
 ## 7. Async / sync
 
 - Endpoints async def
-- El engine OmniVoice es síncrono y bloqueante → envolver llamadas con run_in_threadpool o asyncio.to_thread
-- Un único EnginePool con asyncio.Semaphore(1) en P2000 (evitar OOM)
+- Engines síncronos → envolver con `asyncio.to_thread`
+- EnginePool con `asyncio.Semaphore(2)` (concurrencia controlada)
+- Pocket TTS funciona en CPU; EdgeTTS es cloud; OmniVoice necesita GPU
 
 ## 8. Testing
 
@@ -69,7 +77,7 @@ api → services → repositories → core(engine) → models
 - Fixtures en tests/conftest.py
 - Patrón AAA (Arrange, Act, Assert)
 - Nombres: test_<unit>_<scenario>_<expected>
-- Mock del engine vía protocol/ABC OmniVoiceEngineInterface
+- Mock del engine vía `TtsEngineBase` ABC
 
 ## 9. Git / Commits
 
@@ -87,10 +95,13 @@ api → services → repositories → core(engine) → models
 
 ## 11. Convenciones de audio
 
-- Sample rate interno: 22050 Hz (estándar OmniVoice)
-- Formato de salida por defecto: WAV (PCM 16-bit)
+- Sample rate de referencia:
+  - **24000 Hz** — Pocket TTS, EdgeTTS (y cuando se clona para ambos engines)
+  - **22050 Hz** — OmniVoice (se resamplea de 24000→22050 en tiempo de síntesis)
+- Formato de salida: WAV (PCM 16-bit, mono)
 - Conversión a MP3 opcional vía lameenc
-- Audio de referencia para clonado: 5-30 s, mono, 22050 Hz, sin ruido de fondo
+- Audio de referencia para clonado: 5-30 s, mono, sin ruido de fondo
+- Engine de referencia determinado por `TTS_ENGINE` o parámetro `engines`
 
 ## 12. Reglas especiales para aider
 
