@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import builtins
 import io
 import shutil
 import wave
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from omnivoice_api.core.engines import pocket_tts_engine as pocket_module
+from omnivoice_api.core import ffmpeg
 from omnivoice_api.core.engines.pocket_tts_engine import PocketTTSEngine
 from omnivoice_api.core.exceptions import EngineUnavailableError
 
@@ -121,6 +119,7 @@ def test_apply_speed_ignora_valores_invalidos(speed: float) -> None:
     assert engine._apply_speed(wav, speed) is wav
 
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg no disponible")
 def test_apply_speed_acelera() -> None:
     """speed>1 acorta la duración manteniendo el sample rate."""
     wav = _make_wav_bytes(duration_sec=2.0)
@@ -135,6 +134,7 @@ def test_apply_speed_acelera() -> None:
         assert wav_file.getnchannels() == 1
 
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg no disponible")
 def test_apply_speed_ralentiza() -> None:
     """speed<1 alarga la duración."""
     wav = _make_wav_bytes(duration_sec=1.0)
@@ -144,74 +144,16 @@ def test_apply_speed_ralentiza() -> None:
     assert _wav_duration_sec(result) == pytest.approx(2.0, rel=0.1)
 
 
-def _sin_librosa(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fuerza un ImportError ante cualquier import de librosa."""
-    real_import = builtins.__import__
-
-    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name.startswith("librosa"):
-            raise ImportError("librosa deshabilitado para el test")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-
-
-@pytest.mark.parametrize(
-    ("speed", "expected"),
-    [
-        (1.0, "atempo=1"),
-        (1.2, "atempo=1.2"),
-        (4.0, "atempo=2.0,atempo=2"),
-        (0.25, "atempo=0.5,atempo=0.5"),
-    ],
-)
-def test_atempo_chain_encadena_fuera_de_rango(speed: float, expected: str) -> None:
-    """ffmpeg solo admite atempo 0.5-2.0: fuera de rango se encadena."""
-    assert pocket_module._atempo_chain(speed) == expected
-
-
-def test_stretch_with_ffmpeg_recibe_el_filtro(monkeypatch: pytest.MonkeyPatch) -> None:
-    """El respaldo llama a ffmpeg con el filtro atempo encadenado."""
-    captured: dict[str, Any] = {}
-
-    class _Result:
-        returncode = 0
-        stdout = b"\x00\x00\x00\x00" * 8
-
-    def fake_run(command: list[str], **_kwargs: Any) -> Any:
-        captured["command"] = command
-        return _Result()
-
-    import numpy as np
-
-    monkeypatch.setattr(pocket_module.subprocess, "run", fake_run)
-    pocket_module._stretch_with_ffmpeg(np.zeros(64, dtype=np.float32), 24000, 4.0)
-
-    assert captured["command"][0] == "ffmpeg"
-    assert "atempo=2.0,atempo=2" in captured["command"]
-
-
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg no disponible")
-def test_apply_speed_respaldado_por_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sin librosa se acelera igual usando el respaldo de ffmpeg."""
-    _sin_librosa(monkeypatch)
-    engine = PocketTTSEngine()
-
-    result = engine._apply_speed(_make_wav_bytes(duration_sec=2.0), 1.5)
-
-    assert _wav_duration_sec(result) == pytest.approx(2.0 / 1.5, rel=0.1)
-
-
-def test_apply_speed_falla_sin_librosa_ni_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sin ningún backend de time-stretch el error es explícito, no silencioso."""
-    _sin_librosa(monkeypatch)
-    monkeypatch.setattr(pocket_module, "_stretch_with_ffmpeg", lambda *_args, **_kwargs: None)
+def test_apply_speed_falla_sin_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sin ffmpeg el time-stretch falla con un error explícito, no en silencio."""
+    monkeypatch.setattr(ffmpeg, "time_stretch", lambda *_args, **_kwargs: None)
     engine = PocketTTSEngine()
 
     with pytest.raises(EngineUnavailableError, match="speed"):
         engine._apply_speed(_make_wav_bytes(), 1.5)
 
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg no disponible")
 async def test_synthesize_aplica_speed() -> None:
     """synthesize() aplica la velocidad indicada al audio generado."""
     engine = PocketTTSEngine()

@@ -5,7 +5,9 @@ from __future__ import annotations
 import contextlib
 import logging
 
+from omnivoice_api.core import ffmpeg
 from omnivoice_api.core.engine_base import EngineCapabilities, TtsEngineBase
+from omnivoice_api.core.exceptions import EngineUnavailableError
 from omnivoice_api.core.omnivoice_engine import (
     OmniVoiceEngine,
     get_engine,
@@ -83,6 +85,7 @@ class OmniVoiceAdapter(TtsEngineBase):
         finally:
             if ref_path != reference_audio_path:
                 import os
+
                 with contextlib.suppress(Exception):
                     os.unlink(ref_path)
 
@@ -90,6 +93,7 @@ class OmniVoiceAdapter(TtsEngineBase):
     def _needs_resample(audio_path: str) -> bool:
         try:
             import soundfile as sf
+
             info = sf.info(audio_path)
             return info.samplerate != 22050 or info.channels != 1
         except Exception:
@@ -106,8 +110,11 @@ class OmniVoiceAdapter(TtsEngineBase):
         if data.ndim > 1:
             data = data.mean(axis=1)
         if sr != 22050:
-            import librosa
-            data = librosa.resample(data, orig_sr=sr, target_sr=22050)
+            data = ffmpeg.resample(data, sr, 22050)
+            if data is None:
+                raise EngineUnavailableError(
+                    "No se puede remuestrear la referencia a 22050Hz: falta el binario 'ffmpeg'"
+                )
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             sf.write(tmp.name, data, 22050, subtype="PCM_16")

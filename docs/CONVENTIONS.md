@@ -16,6 +16,8 @@
 - Testing: pytest + pytest-asyncio + httpx (AsyncClient) + pytest-cov
 - Calidad: ruff (lint+format), mypy (strict en src/)
 - Empaquetado: uv + pyproject.toml (dependencias opcionales por engine)
+- Audio nativo: binario de sistema **ffmpeg** (resample y time-stretch).
+  Prohibido `librosa` (ver sección 11)
 
 ## 2. Estilo de código
 
@@ -99,6 +101,12 @@ api → services → repositories → core(engines) → models
   - **24000 Hz** — Pocket TTS, EdgeTTS (y cuando se clona para ambos engines)
   - **22050 Hz** — OmniVoice (se resamplea de 24000→22050 en tiempo de síntesis)
 - Formato de salida: WAV (PCM 16-bit, mono)
+- Resample y time-stretch (`speed`): **ffmpeg** (`aresample` / `atempo` vía
+  `omnivoice_api/core/ffmpeg.py`). Devuelven `None` si falta el binario y cada
+  llamante lanza su error de dominio
+- `librosa` está **prohibido**: arrastra `numba`, que fija o downgradea `numpy`
+  y rompe el stack `torch 2.5.1` + `pocket-tts` (el gateway actual corre sin
+  `librosa`). Quien necesite DSP use `ffmpeg` o `numpy`/`scipy`, nunca librosa
 - Conversión a MP3 opcional vía lameenc
 - Audio de referencia para clonado: 5-30 s, mono, sin ruido de fondo
 - Engine de referencia determinado por `TTS_ENGINE` o parámetro `engines`

@@ -26,7 +26,11 @@ API REST para síntesis de voz (TTS) multilingüe con **múltiples engines**:
 ## Pre-requisitos
 
 - **Python 3.11+**
-- **FFmpeg** (para conversión de audio con pydub)
+- **FFmpeg** (binario del sistema): resample del audio de referencia, `speed`
+  (`atempo`) y conversión con pydub. Es el único backend de audio nativo.
+  No instales `librosa` en este proyecto: su dependencia `numba` fija o
+  downgradea `numpy` y rompe `torch 2.5.1` + `pocket-tts` (ver
+  `docs/CONVENTIONS.md`, secciones 1 y 11).
 - **GPU NVIDIA con CUDA** — solo necesario para `TTS_ENGINE=omnivoice`
 - **Internet** — necesario para `TTS_ENGINE=edgetts` (cloud) y descarga de modelos Pocket TTS
 

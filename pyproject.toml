@@ -31,11 +31,12 @@ dependencies = [
     "python-multipart>=0.0.12",
     # Logging
     "loguru>=0.7.0",
-    # Audio (post-procesado en la API)
+    # Audio (post-procesado en la API). El resample y el time-stretch los hace
+    # el binario del sistema ffmpeg (ver README.md: librosa está prohibido,
+    # su dependencia numba rompe numpy y con él a torch + pocket-tts).
     "soundfile>=0.12.1",
     "pydub>=0.25.1",
     "lameenc>=1.2.0",
-    "librosa>=0.10.0",
     # Persistencia
     "sqlalchemy>=2.0.30",
     "alembic>=1.13.1",
@@ -128,7 +129,8 @@ exclude = [".venv", "storage", "models", "__pycache__", ".mypy_cache", ".ruff_ca
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RET", "PL", "PTH", "ERA", "TID", "ARG", "C4", "N", "Q", "RUF"]
 # B008: FastAPI depende de Depends()/get_settings() en default-args (idiomático).
-# PLC0415: imports lazy intencionales de deps opcionales (torch, librosa, engines).
+# PLC0415: imports lazy intencionales de deps opcionales (torch, engines) y stdlib
+# opcional (subprocess solo donde hace falta).
 ignore = ["S101", "S311", "S603", "S607", "B008", "PLC0415"]
 fixable = ["ALL"]
 unfixable = ["TID252", "PTH118", "PTH120", "PTH123"]

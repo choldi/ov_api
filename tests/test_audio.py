@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from omnivoice_api.core import ffmpeg
 from omnivoice_api.core.audio import AudioValidator
 from omnivoice_api.core.exceptions import InvalidReferenceAudioError
 
@@ -103,6 +104,19 @@ async def test_validate_resamples_different_rate(validator: AudioValidator, tmp_
     processed = sf.SoundFile(processed_path)
     assert processed.samplerate == 22050
     processed.close()
+
+
+@pytest.mark.asyncio
+async def test_validate_resample_sin_ffmpeg_falla_explicito(
+    validator: AudioValidator, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sin el binario ffmpeg el resample falla con error de dominio."""
+    monkeypatch.setattr(ffmpeg, "resample", lambda *_args, **_kwargs: None)
+    wav_path = tmp_path / "lo_rate.wav"
+    _create_wav(wav_path, duration=1.0, sample_rate=4000)
+
+    with pytest.raises(InvalidReferenceAudioError, match="ffmpeg"):
+        await validator.validate_and_prepare(wav_path, "es")
 
 
 @pytest.mark.asyncio

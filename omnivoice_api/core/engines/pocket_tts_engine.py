@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import subprocess
 import threading
 import wave
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+from omnivoice_api.core import ffmpeg
 from omnivoice_api.core.engine_base import EngineCapabilities, TtsEngineBase
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
@@ -31,85 +31,9 @@ _MAX_CACHED_CLONE_STATES = 4
 # Tolerancia para tratar `speed` como 1.0 (evita time-stretch inútil).
 _SPEED_EPSILON = 1e-3
 
-# Rango de valores que acepta el filtro `atempo` de ffmpeg.
-_ATEMPO_MIN = 0.5
-_ATEMPO_MAX = 2.0
-
-
-def _atempo_chain(speed: float) -> str:
-    """Construye el filtro `atempo` de ffmpeg para un factor de velocidad.
-
-    ``ffmpeg`` solo admite ``atempo`` en el rango 0.5-2.0, así que los
-    factores fuera de ese rango se descomponen en varios filtros encadenados.
-
-    Args:
-        speed: Factor de velocidad (>1 acelera, <1 ralentiza).
-
-    Returns:
-        La cadena de filtros para ``-filter:a``.
-    """
-    remaining = float(speed)
-    steps: list[str] = []
-    while remaining > _ATEMPO_MAX:
-        steps.append(f"atempo={_ATEMPO_MAX}")
-        remaining /= _ATEMPO_MAX
-    while remaining < _ATEMPO_MIN:
-        steps.append(f"atempo={_ATEMPO_MIN}")
-        remaining /= _ATEMPO_MIN
-    steps.append(f"atempo={remaining:.6g}")
-    return ",".join(steps)
-
-
-def _stretch_with_ffmpeg(audio: Any, sample_rate: int, speed: float) -> Any | None:
-    """Acelera la señal con ``ffmpeg -filter:a atempo`` (conserva el tono).
-
-    Args:
-        audio: Señal mono de muestras float32.
-        sample_rate: Frecuencia de muestreo en Hz.
-        speed: Factor de velocidad.
-
-    Returns:
-        La señal estirada, o ``None`` si no hay ``ffmpeg`` o el filtro falla.
-    """
-    import numpy as np
-
-    try:
-        completed = subprocess.run(
-            [
-                "ffmpeg",
-                "-v",
-                "error",
-                "-f",
-                "f32le",
-                "-ar",
-                str(sample_rate),
-                "-ac",
-                "1",
-                "-i",
-                "pipe:0",
-                "-filter:a",
-                _atempo_chain(speed),
-                "-f",
-                "f32le",
-                "-ac",
-                "1",
-                "-ar",
-                str(sample_rate),
-                "pipe:1",
-            ],
-            input=np.asarray(audio, dtype=np.float32).tobytes(),
-            capture_output=True,
-            check=False,
-        )
-    except (FileNotFoundError, OSError):
-        return None
-    if completed.returncode != 0 or not completed.stdout:
-        return None
-    return np.frombuffer(completed.stdout, dtype=np.float32)
-
 
 def _stretch_audio(audio: Any, sample_rate: int, speed: float) -> Any:
-    """Acelera ``audio`` con ``librosa`` si existe, o con ``ffmpeg`` si no.
+    """Acelera ``audio`` con el time-stretch de ``ffmpeg`` (conserva el tono).
 
     Args:
         audio: Señal mono de muestras float32.
@@ -120,19 +44,15 @@ def _stretch_audio(audio: Any, sample_rate: int, speed: float) -> Any:
         La señal estirada en el mismo formato de entrada.
 
     Raises:
-        EngineUnavailableError: Si no hay ni ``librosa`` ni ``ffmpeg``.
+        EngineUnavailableError: Si ``ffmpeg`` no está disponible.
     """
-    try:
-        from librosa.effects import time_stretch
-    except ImportError as exc:
-        stretched = _stretch_with_ffmpeg(audio, sample_rate, speed)
-        if stretched is None:
-            raise EngineUnavailableError(
-                "No se puede aplicar 'speed': falta la librería 'librosa' y no hay "
-                "ffmpeg disponible para el time-stretch"
-            ) from exc
-        return stretched
-    return time_stretch(audio, rate=float(speed))
+    stretched = ffmpeg.time_stretch(audio, sample_rate, speed)
+    if stretched is None:
+        raise EngineUnavailableError(
+            "No se puede aplicar 'speed': hace falta el binario 'ffmpeg' "
+            "(librosa no se usa, ver README.md)"
+        )
+    return stretched
 
 
 # Pocket TTS preset voice names
@@ -407,9 +327,8 @@ class PocketTTSEngine(TtsEngineBase):
         """Ajusta la velocidad del audio conservando el tono.
 
         Pocket TTS no admite velocidad nativa, así que el cambio se hace con
-        un time-stretch posterior (``librosa`` si está instalado, o ``ffmpeg``
-        como respaldo). Un ``speed`` nulo o muy próximo a 1.0 se ignora para
-        no pagar el coste del estiramiento.
+        un time-stretch posterior de ``ffmpeg`` (``atempo``). Un ``speed`` nulo
+        o muy próximo a 1.0 se ignora para no pagar el coste del estiramiento.
 
         Args:
             wav_bytes: Audio WAV mono PCM de entrada.
@@ -419,7 +338,7 @@ class PocketTTSEngine(TtsEngineBase):
             El WAV reescrito, o el original si ``speed`` equivale a 1.0.
 
         Raises:
-            EngineUnavailableError: Si no hay forma de hacer el time-stretch.
+            EngineUnavailableError: Si ``ffmpeg`` no está disponible.
         """
         if speed <= 0 or abs(speed - 1.0) < _SPEED_EPSILON:
             return wav_bytes

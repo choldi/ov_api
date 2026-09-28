@@ -8,6 +8,7 @@ from pathlib import Path
 import soundfile as sf
 from loguru import logger
 
+from omnivoice_api.core import ffmpeg
 from omnivoice_api.core.exceptions import InvalidReferenceAudioError
 from omnivoice_api.settings import get_settings
 
@@ -110,11 +111,12 @@ class AudioValidator:
 
             # Resample if needed
             if info.samplerate != self._target_sample_rate:
-                import librosa
-
-                audio_data = librosa.resample(
-                    audio_data, orig_sr=info.samplerate, target_sr=self._target_sample_rate
-                )
+                resampled = ffmpeg.resample(audio_data, info.samplerate, self._target_sample_rate)
+                if resampled is None:
+                    raise InvalidReferenceAudioError(
+                        "No se puede remuestrear la referencia: falta el binario 'ffmpeg'"
+                    )
+                audio_data = resampled
 
             # Write to temporary file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
