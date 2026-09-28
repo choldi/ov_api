@@ -43,6 +43,7 @@ class ConversationService:
         *,
         turns: list[ConversationTurn],
         pause_ms: int = 300,
+        speed: float = 1.0,
     ) -> AudioResult:
         """Genera audio concatenando múltiples turnos con silencios entre ellos.
 
@@ -51,6 +52,8 @@ class ConversationService:
         Args:
             turns: Lista de turnos (voice_id + text + language). Mínimo 2.
             pause_ms: Milisilundos de silencio entre turnos (default: 300).
+            speed: Factor de velocidad aplicado a cada turno (default: 1.0).
+                Los ``pause_ms`` no se escalan.
 
         Returns:
             AudioResult con el WAV concatenado.
@@ -77,6 +80,7 @@ class ConversationService:
                 text=turn.text,
                 voice_id=turn.voice_id,
                 language=turn.language,
+                speed=speed,
             )
             audio_segments.append(result.wav_bytes)
             sample_rate = result.sample_rate

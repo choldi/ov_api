@@ -90,6 +90,32 @@ async def test_conversation_success():
     assert isinstance(result, AudioResult)
     assert result.wav_bytes[:4] == b"RIFF"
     assert mock_tts.synthesize_stock.call_count == 2
+    assert all(call.kwargs["speed"] == 1.0 for call in mock_tts.synthesize_stock.call_args_list)
+
+
+@pytest.mark.asyncio
+async def test_conversation_forwards_speed_to_every_turn():
+    """El factor de velocidad llega a cada turno sin tocar los pause_ms."""
+    mock_tts = AsyncMock()
+    mock_tts.synthesize_stock.return_value = AudioResult(
+        wav_bytes=_make_wav(),
+        duration_sec=0.5,
+        sample_rate=22050,
+    )
+    service = ConversationService(tts_service=mock_tts)
+
+    result = await service.generate(
+        turns=[
+            ConversationTurn(voice_id="es-mx-male", text="Hola", language="es"),
+            ConversationTurn(voice_id="es-mx-female", text="¿Qué tal?", language="es"),
+        ],
+        pause_ms=300,
+        speed=1.5,
+    )
+
+    assert isinstance(result, AudioResult)
+    assert mock_tts.synthesize_stock.call_count == 2
+    assert all(call.kwargs["speed"] == 1.5 for call in mock_tts.synthesize_stock.call_args_list)
 
 
 @pytest.mark.asyncio
@@ -255,3 +281,50 @@ async def test_conversations_endpoint_custom_pause(async_client):
         assert resp.status_code == 200
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_conversations_endpoint_forwards_speed(async_client):
+    from omnivoice_api.api.v1.conversations import get_conversation_service
+    from omnivoice_api.main import app
+
+    mock_service = AsyncMock()
+    mock_service.generate.return_value = AudioResult(
+        wav_bytes=_make_wav(),
+        duration_sec=1.0,
+        sample_rate=22050,
+    )
+    app.dependency_overrides[get_conversation_service] = lambda: mock_service
+    try:
+        resp = await async_client.post(
+            "/api/v1/conversations",
+            json={
+                "turns": [
+                    {"voice_id": "es-mx-male", "text": "First", "language": "es"},
+                    {"voice_id": "es-mx-female", "text": "Second", "language": "es"},
+                ],
+                "pause_ms": 300,
+                "speed": 1.2,
+            },
+        )
+        assert resp.status_code == 200
+        assert mock_service.generate.call_args.kwargs["speed"] == 1.2
+        assert mock_service.generate.call_args.kwargs["pause_ms"] == 300
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_conversations_endpoint_speed_out_of_range(async_client):
+    """speed fuera de 0.5-2.0 se rechaza en validación (422)."""
+    resp = await async_client.post(
+        "/api/v1/conversations",
+        json={
+            "turns": [
+                {"voice_id": "es-mx-male", "text": "First", "language": "es"},
+                {"voice_id": "es-mx-female", "text": "Second", "language": "es"},
+            ],
+            "speed": 3.0,
+        },
+    )
+    assert resp.status_code == 422
