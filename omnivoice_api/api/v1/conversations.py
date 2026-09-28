@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import Response, StreamingResponse
 
-from omnivoice_api.core.engine_client import OmniVoiceEngineClient
+from omnivoice_api.core.engine_client import get_shared_engine_client
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
     VoiceNotFoundError,
@@ -29,7 +29,7 @@ def _stream_wav(wav_bytes: bytes, chunk_size: int = WAV_CHUNK_SIZE):
 
 async def get_conversation_service() -> ConversationService:
     """Dependency para obtener el servicio de conversaciones."""
-    engine_client = OmniVoiceEngineClient()
+    engine_client = get_shared_engine_client()
     tts_service = TtsService(engine_client=engine_client)
     service = ConversationService(engine_client=engine_client, tts_service=tts_service)
     try:

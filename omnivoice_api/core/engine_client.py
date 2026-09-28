@@ -358,3 +358,54 @@ class OmniVoiceEngineClient:
             duration_sec=validation["duration_sec"],
             sample_rate=validation["sample_rate"],
         )
+
+
+# ---------------------------------------------------------------------------
+# Cliente compartido por el proceso.
+#
+# Sin un cliente compartido, cada petición construye un OmniVoiceEngineClient
+# nuevo y lo destruye al terminar: eso vuelve a cargar los pesos del modelo en
+# cada llamada (cientos de cargas durante un solo render de podcast).
+# ---------------------------------------------------------------------------
+
+_shared_client: OmniVoiceEngineClient | None = None
+
+
+def get_shared_engine_client() -> OmniVoiceEngineClient:
+    """Devuelve el cliente de engine compartido por todo el proceso.
+
+    Se crea perezosamente a la primera petición; el lifespan de la API lo
+    adelanta con :func:`set_shared_engine_client` para cargar el modelo una
+    sola vez al arrancar.
+
+    Returns:
+        El cliente singleton.
+    """
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = OmniVoiceEngineClient()
+    return _shared_client
+
+
+def set_shared_engine_client(engine: TtsEngineBase) -> OmniVoiceEngineClient:
+    """Instala ``engine`` como engine compartido del proceso.
+
+    Pensado para el arranque de la API (donde el lifespan decide qué engine
+    crear, incluido el fallback a mock) y para los tests.
+
+    Args:
+        engine: Instancia de engine ya construida. Reemplaza cualquier cliente
+            compartido previo sin cerrarlo.
+
+    Returns:
+        El cliente singleton que envuelve al engine.
+    """
+    global _shared_client
+    _shared_client = OmniVoiceEngineClient(engine=engine)
+    return _shared_client
+
+
+def reset_shared_engine_client() -> None:
+    """Descarta el cliente compartido, sin cerrarlo (solo tests/shutdown)."""
+    global _shared_client
+    _shared_client = None

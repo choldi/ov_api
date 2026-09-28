@@ -225,14 +225,15 @@ async def test_synthesize_clone_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_engine_client_creates_new() -> None:
-    """Test de que _get_engine_client crea un cliente nuevo si es None."""
+async def test_get_engine_client_uses_shared() -> None:
+    """Test de que _get_engine_client reutiliza el cliente compartido."""
     service = TtsService(engine_client=None, voice_service=AsyncMock())
-    with patch("omnivoice_api.services.tts.OmniVoiceEngineClient") as engine_client_cls:
+    with patch("omnivoice_api.services.tts.get_shared_engine_client") as shared_getter:
         mock_instance = AsyncMock()
-        engine_client_cls.return_value = mock_instance
+        shared_getter.return_value = mock_instance
         client = await service._get_engine_client()
         assert client is mock_instance
+        shared_getter.assert_called_once_with()
         mock_instance.start.assert_called_once()
 
 
@@ -312,3 +313,15 @@ async def test_conversation_rejects_empty_text() -> None:
     ]
     with pytest.raises(ValueError, match="texto vacío"):
         await convo_service.generate(turns=turns)
+
+
+@pytest.mark.asyncio
+async def test_close_no_descarga_el_engine_compartido() -> None:
+    """close() suelta la referencia sin detener el cliente compartido."""
+    client = AsyncMock()
+    service = TtsService(engine_client=client, voice_service=AsyncMock())
+
+    await service.close()
+
+    client.stop.assert_not_awaited()
+    assert service._engine_client is None

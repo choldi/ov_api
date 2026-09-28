@@ -44,6 +44,10 @@ from fastapi.staticfiles import StaticFiles
 
 from omnivoice_api.api.v1 import conversations, system, tts, voices
 from omnivoice_api.core.cleanup import start_cleanup_task, stop_cleanup_task
+from omnivoice_api.core.engine_client import (
+    reset_shared_engine_client,
+    set_shared_engine_client,
+)
 from omnivoice_api.middleware import APIKeyMiddleware, RequestIDMiddleware
 from omnivoice_api.settings import get_settings
 
@@ -82,7 +86,9 @@ async def lifespan(app: FastAPI):
         from omnivoice_api.core.engine_factory import create_engine
 
         _active_engine = create_engine(engine_name)
-        await _active_engine.initialize()
+        # El cliente queda compartido por el proceso para que todas las
+        # peticiones reutilicen el mismo engine (sin recargar pesos).
+        await set_shared_engine_client(_active_engine).start()
         logger.info("Engine '%s' inicializado correctamente", _active_engine.name)
     except Exception as e:
         if engine_name == "omnivoice" and settings.OMNIVOICE_FALLBACK_TO_MOCK:
@@ -94,7 +100,7 @@ async def lifespan(app: FastAPI):
             from omnivoice_api.core.engines.mock_engine import MockEngine
 
             _active_engine = MockEngine()
-            await _active_engine.initialize()
+            await set_shared_engine_client(_active_engine).start()
         else:
             logger.exception("Fallo inicializando engine '%s': %s", engine_name, e)
             raise
@@ -110,6 +116,7 @@ async def lifespan(app: FastAPI):
     if _active_engine is not None:
         await _active_engine.close()
         _active_engine = None
+    reset_shared_engine_client()
 
 
 app = FastAPI(

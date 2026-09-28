@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     TTS_ENGINES: str = ""
 
     # Pocket TTS config (when TTS_ENGINE=pocket_tts)
-    POCKET_TTS_MODEL: str = "kyutai/pocket-tts-100m-en"
+    # Código de idioma para load_model() (p. ej. "english") o ruta/URL de un
+    # fichero de configuración YAML ("hf://<repo>/config.yaml"). Un repo id de
+    # Hugging Face sin .yaml no sirve y se ignora con warning.
+    POCKET_TTS_MODEL: str = "english"
 
     # EdgeTTS config (when TTS_ENGINE=edgetts)
     EDGETTS_VOICE_PREFIX: str = "es-MX"

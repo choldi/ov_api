@@ -14,6 +14,7 @@ from omnivoice_api.core.engine_client import (
     EngineHealth,
     OmniVoiceEngineClient,
     StockVoice,
+    reset_shared_engine_client,
 )
 from omnivoice_api.core.omnivoice_engine import GenerationParams, OmniVoiceEngine
 from omnivoice_api.main import app
@@ -64,6 +65,10 @@ def _isolate_external_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("OMNIVOICE_FALLBACK_TO_MOCK", "false")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
 
+    # El cliente de engine es un singleton de proceso: se limpia en cada test
+    # para que un mock no se filtre al test siguiente.
+    reset_shared_engine_client()
+
     yield
 
     import omnivoice_api.core.omnivoice_engine as engine_mod
@@ -71,6 +76,7 @@ def _isolate_external_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     engine_mod._engine_instance = None
     OmniVoiceEngine._instance = None
     OmniVoiceEngine._initialized = False
+    reset_shared_engine_client()
 
 
 # ---------------------------------------------------------------------------

@@ -147,6 +147,7 @@ unfixable = ["TID252", "PTH118", "PTH120", "PTH123"]
 "omnivoice_api/core/cleanup.py" = ["PLW0603", "PLW0602"]
 "omnivoice_api/core/embedding_cache.py" = ["PLW0603"]
 "omnivoice_api/core/engine_pool.py" = ["PLW0603"]
+"omnivoice_api/core/engine_client.py" = ["PLW0603"]
 # Scripts y ejemplos de desarrollo (stándalone, no forman parte del paquete).
 "scripts/*" = ["PLR2004", "PLW2901", "PTH123"]
 "docs/examples/*" = ["PLR2004", "PTH123"]

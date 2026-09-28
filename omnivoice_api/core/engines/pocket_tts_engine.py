@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import threading
 import wave
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,14 @@ from omnivoice_api.core.exceptions import (
 from omnivoice_api.settings import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Estados de clonado retenidos en memoria (1 por voz en uso). Un estado pesa
+# ~1 MB por segundo de referencia; 4 voces mantienen el render de un podcast
+# entero sin recalcular el prompt y sin disparar el uso de RAM.
+_MAX_CACHED_CLONE_STATES = 4
+
+# Tolerancia para tratar `speed` como 1.0 (evita time-stretch inútil).
+_SPEED_EPSILON = 1e-3
 
 # Pocket TTS preset voice names
 _POCKET_VOICE_PRESETS: dict[str, str] = {
@@ -98,6 +108,12 @@ class PocketTTSEngine(TtsEngineBase):
         self._settings = get_settings()
         self._model: Any = None
         self._voice_states: dict[str, Any] = {}
+        self._clone_states: OrderedDict[tuple[str, float, int], Any] = OrderedDict()
+        # pocket-tts documenta generate_audio() y get_state_for_audio_prompt()
+        # como NO thread-safe: generación y cálculo de prompt se serializan
+        # con un lock de thread (el trabajo corre en asyncio.to_thread, así
+        # que el event loop nunca queda bloqueado esperándolo).
+        self._generate_lock = threading.Lock()
 
     @property
     def name(self) -> str:
@@ -114,16 +130,45 @@ class PocketTTSEngine(TtsEngineBase):
             supported_languages=list(_POCKET_LANGUAGES),
         )
 
+    def _model_kwargs(self) -> dict[str, Any]:
+        """Traduce ``POCKET_TTS_MODEL`` a argumentos válidos de ``load_model``.
+
+        Acepta un código de idioma (``english``) como ``language=`` o una
+        ruta/URL de config YAML (``hf://repo/config.yaml``) como ``config=``.
+
+        Returns:
+            Argumentos de keyword para ``TTSModel.load_model``; vacío si el
+            valor no es utilizable y procede usar la config por defecto.
+        """
+        value = (self._settings.POCKET_TTS_MODEL or "").strip()
+        if not value:
+            return {}
+        if value.startswith(("hf://", "http://", "https://")) or value.endswith((".yaml", ".yml")):
+            return {"config": value}
+        if Path(value).exists():
+            return {"config": value}
+        if "/" not in value and "\\" not in value:
+            return {"language": value}
+        logger.warning(
+            "POCKET_TTS_MODEL=%r no es ni un codigo de idioma ni un fichero .yaml: "
+            "se ignora y se usa la config por defecto.",
+            value,
+        )
+        return {}
+
     async def initialize(self) -> None:
         if self._model is not None:
             return
         try:
             from pocket_tts import TTSModel
 
+            kwargs = self._model_kwargs()
             logger.info(
-                "Initializing Pocket TTS engine (model=%s)...", self._settings.POCKET_TTS_MODEL
+                "Initializing Pocket TTS engine (model=%s, load=%s)...",
+                self._settings.POCKET_TTS_MODEL,
+                kwargs or "defaults (english)",
             )
-            self._model = await asyncio.to_thread(TTSModel.load_model)
+            self._model = await asyncio.to_thread(TTSModel.load_model, **kwargs)
             # Pre-load voice states for stock presets
             for preset_name in _POCKET_VOICE_PRESETS:
                 try:
@@ -166,8 +211,7 @@ class PocketTTSEngine(TtsEngineBase):
             raise EngineUnavailableError(f"Voice preset '{preset}' no cargado")
 
         try:
-            audio = await asyncio.to_thread(self._model.generate_audio, state, text)
-            return self._tensor_to_wav(audio)
+            return await asyncio.to_thread(self._render_locked, state, text, speed)
         except Exception as e:
             raise EngineUnavailableError(f"Error sintetizando con Pocket TTS: {e}") from e
 
@@ -184,11 +228,9 @@ class PocketTTSEngine(TtsEngineBase):
             raise EngineUnavailableError(f"Reference audio no encontrado: {reference_audio_path}")
 
         try:
-            state = await asyncio.to_thread(
-                self._model.get_state_for_audio_prompt, reference_audio_path
+            return await asyncio.to_thread(
+                self._render_clone_locked, reference_audio_path, text, speed
             )
-            audio = await asyncio.to_thread(self._model.generate_audio, state, text)
-            return self._tensor_to_wav(audio)
         except Exception as e:
             raise EngineUnavailableError(f"Error clonando voz con Pocket TTS: {e}") from e
 
@@ -222,6 +264,65 @@ class PocketTTSEngine(TtsEngineBase):
             "mode": "REAL" if self._model else "NOT_LOADED",
             "engine": self.name,
         }
+
+    def _render_locked(self, state: Any, text: str, speed: float) -> bytes:
+        """Genera audio de voz stock serializando el acceso al modelo."""
+        with self._generate_lock:
+            audio = self._model.generate_audio(state, text)
+        return self._apply_speed(self._tensor_to_wav(audio), speed)
+
+    def _render_clone_locked(self, reference_audio_path: str, text: str, speed: float) -> bytes:
+        """Genera audio clonado serializando cálculo de prompt + generación."""
+        with self._generate_lock:
+            state = self._clone_state(reference_audio_path)
+            audio = self._model.generate_audio(state, text)
+        return self._apply_speed(self._tensor_to_wav(audio), speed)
+
+    def _clone_state(self, reference_audio_path: str) -> Any:
+        """Estado de clonado cacheado por fichero de referencia (bajo el lock).
+
+        Recalcular el estado en cada segmento cuesta ~0.7 s, por lo que un
+        render de 2 voces lo hacía unas 200 veces. La clave incluye tamaño y
+        mtime para invalidarse si cambia la referencia.
+        """
+        path = Path(reference_audio_path)
+        stat = path.stat()
+        key = (str(path), stat.st_mtime, stat.st_size)
+        cached = self._clone_states.get(key)
+        if cached is not None:
+            self._clone_states.move_to_end(key)
+            return cached
+        state = self._model.get_state_for_audio_prompt(reference_audio_path)
+        self._clone_states[key] = state
+        while len(self._clone_states) > _MAX_CACHED_CLONE_STATES:
+            self._clone_states.popitem(last=False)
+        return state
+
+    def _apply_speed(self, wav_bytes: bytes, speed: float) -> bytes:
+        """Ajusta la velocidad del audio conservando el tono.
+
+        Pocket TTS no admite velocidad nativa, así que el cambio se hace con
+        un time-stretch posterior. Un ``speed`` nulo o muy próximo a 1.0 se
+        ignora para no pagar el coste del estiramiento.
+
+        Args:
+            wav_bytes: Audio WAV mono PCM de entrada.
+            speed: Factor de velocidad (>1 acelera, <1 ralentiza).
+
+        Returns:
+            El WAV reescrito, o el original si ``speed`` equivale a 1.0.
+        """
+        if speed <= 0 or abs(speed - 1.0) < _SPEED_EPSILON:
+            return wav_bytes
+
+        import soundfile as sf
+        from librosa.effects import time_stretch
+
+        audio, sample_rate = sf.read(io.BytesIO(wav_bytes), dtype="float32")
+        stretched = time_stretch(audio, rate=float(speed))
+        buffer = io.BytesIO()
+        sf.write(buffer, stretched, sample_rate, format="WAV", subtype="PCM_16")
+        return buffer.getvalue()
 
     def _tensor_to_wav(self, audio: Any) -> bytes:
         """Convert tensor/numpy output from Pocket TTS to WAV bytes."""

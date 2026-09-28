@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 from fastapi.responses import Response, StreamingResponse
 
-from omnivoice_api.core.engine_client import OmniVoiceEngineClient
+from omnivoice_api.core.engine_client import get_shared_engine_client
 from omnivoice_api.core.engine_pool import get_engine_pool
 from omnivoice_api.core.exceptions import (
     EngineUnavailableError,
@@ -32,15 +32,16 @@ def _stream_wav(wav_bytes: bytes, chunk_size: int = WAV_CHUNK_SIZE):
 
 
 async def get_tts_service() -> TtsService:
-    """Dependency para obtener el servicio TTS."""
-    engine_client = OmniVoiceEngineClient()
+    """Dependency para obtener el servicio TTS.
+
+    Reutiliza el cliente de engine compartido por el proceso: cerrarlo aquí
+    descargaría el modelo tras cada petición y obligaría a recargarlo en la
+    siguiente.
+    """
+    engine_client = get_shared_engine_client()
     voice_service = VoiceService()
     await voice_service.initialize()
-    service = TtsService(engine_client=engine_client, voice_service=voice_service)
-    try:
-        yield service
-    finally:
-        await service.close()
+    yield TtsService(engine_client=engine_client, voice_service=voice_service)
 
 
 def _handle_tts_error(e: Exception) -> None:

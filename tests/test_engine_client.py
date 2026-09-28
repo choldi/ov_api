@@ -202,3 +202,43 @@ async def test_health() -> None:
     health = await client.health()
     assert health.model_loaded is True
     assert health.gpu_available is True
+
+
+def test_shared_engine_client_es_un_singleton() -> None:
+    """get_shared_engine_client reutiliza una única instancia por proceso."""
+    from omnivoice_api.core.engine_client import (
+        get_shared_engine_client,
+        reset_shared_engine_client,
+        set_shared_engine_client,
+    )
+
+    reset_shared_engine_client()
+    try:
+        first = get_shared_engine_client()
+        assert get_shared_engine_client() is first
+
+        engine = AsyncMock()
+        installed = set_shared_engine_client(engine)
+
+        assert installed is get_shared_engine_client()
+        assert installed is not first
+        assert installed.engine is engine
+    finally:
+        reset_shared_engine_client()
+
+
+def test_reset_shared_engine_client_crea_otra_instancia() -> None:
+    """reset_shared_engine_client descarta el cliente compartido."""
+    from omnivoice_api.core.engine_client import (
+        get_shared_engine_client,
+        reset_shared_engine_client,
+    )
+
+    reset_shared_engine_client()
+    try:
+        first = get_shared_engine_client()
+        reset_shared_engine_client()
+
+        assert get_shared_engine_client() is not first
+    finally:
+        reset_shared_engine_client()

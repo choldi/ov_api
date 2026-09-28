@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
+from omnivoice_api.core.engine_client import (
+    AudioResult,
+    OmniVoiceEngineClient,
+    get_shared_engine_client,
+)
 from omnivoice_api.core.exceptions import (
     UnsupportedEmotionError,
     UnsupportedLanguageError,
@@ -55,7 +59,9 @@ class TtsService:
 
     async def _get_engine_client(self) -> OmniVoiceEngineClient:
         if self._engine_client is None:
-            self._engine_client = OmniVoiceEngineClient()
+            # Cliente compartido por el proceso: construir uno propio aquí
+            # recargaría los pesos del modelo en cada petición.
+            self._engine_client = get_shared_engine_client()
             await self._engine_client.start()
         return self._engine_client
 
@@ -190,6 +196,11 @@ class TtsService:
         )
 
     async def close(self) -> None:
-        if self._engine_client is not None:
-            await self._engine_client.stop()
-            self._engine_client = None
+        """Suelta la referencia al cliente sin descargar el engine.
+
+        El cliente de engine es compartido por el proceso: detenerlo aquí
+        descargaría los pesos del modelo y obligaría a recargarlos en la
+        siguiente petición. Su ciclo de vida real lo lleva el lifespan de la
+        API.
+        """
+        self._engine_client = None
