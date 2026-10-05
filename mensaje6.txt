@@ -1,0 +1,20 @@
+Resumen de cambios:
+
+ • Makefile:
+    • make install ahora hace 4 pasos en el mismo venv: crea venv → instala proyecto (pip install -e ".[dev]") → instala torch/torchaudio pinneados desde el índice de
+      PyTorch → instala OmniVoice desde Git (pip install git+https://github.com/k2-fsa/OmniVoice.git).
+    • Variables TORCH_VERSION, TORCHAUDIO_VERSION, CUDA_VERSION y OMNIVOICE_REPO son overrideables (por defecto 2.8.0+cu128, que es la combinación recomendada por el
+      README de OmniVoice).
+    • Nuevos targets install-torch e install-omnivoice para reinstalar componentes individualmente sin recrear el venv.
+    • make dev, make run, make test, make lint, etc. siguen dependiendo de install, así que OmniVoice siempre estará presente antes de arrancar el servidor.
+ • scripts/check_omnivoice_install.py (nuevo): valida que torch y torchaudio están alineados (mismo X.Y.Z base) y que la extensión nativa de torchaudio carga sin el
+   error WinError 127 / torch_library_impl. Si todo está OK, make dev debería arrancar.
+
+Notas operativas para tu caso (Windows + P2000):
+
+ 1 Tu GPU P2000 es Pascal (sm_61) y no soporta CUDA 11.8+ en builds recientes de PyTorch. Antes de make install, confirma qué CUDA soporta tu driver:
+    • Driver ≥ 522.06 → CUDA 12.x toolkit disponible, pero el runtime de PyTorch 2.8+ requiere CUDA 12.x y sm_61 puede no estar incluido en kernels precompilados.
+    • Si torch.cuda.is_available() devuelve False o make check-gpu falla, prueba con make install TORCH_VERSION=2.4.0 TORCHAUDIO_VERSION=2.4.0 CUDA_VERSION=cu121
+      (PyTorch 2.4 fue el último con soporte razonable para Pascal en Windows).
+ 2 Tras make install, ejecuta make check-omnivoice-install para confirmar que no hay mismatch de versiones antes de make dev.
+

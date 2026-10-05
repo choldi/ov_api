@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from omnivoice_api.core.engine_client import AudioResult
-from omnivoice_api.core.exceptions import VoiceNotFoundError
-from omnivoice_api.services.conversation import ConversationService, ConversationTurn
+from tts_api.core.engine_client import AudioResult
+from tts_api.core.exceptions import VoiceNotFoundError
+from tts_api.services.conversation import ConversationService, ConversationTurn
 
 
 def _make_wav() -> bytes:
@@ -257,8 +257,8 @@ async def test_conversations_endpoint_voice_not_found(async_client):
 
 @pytest.mark.asyncio
 async def test_conversations_endpoint_custom_pause(async_client):
-    from omnivoice_api.api.v1.conversations import get_conversation_service
-    from omnivoice_api.main import app
+    from tts_api.api.v1.conversations import get_conversation_service
+    from tts_api.main import app
 
     mock_service = AsyncMock()
     mock_service.generate.return_value = AudioResult(
@@ -285,8 +285,8 @@ async def test_conversations_endpoint_custom_pause(async_client):
 
 @pytest.mark.asyncio
 async def test_conversations_endpoint_forwards_speed(async_client):
-    from omnivoice_api.api.v1.conversations import get_conversation_service
-    from omnivoice_api.main import app
+    from tts_api.api.v1.conversations import get_conversation_service
+    from tts_api.main import app
 
     mock_service = AsyncMock()
     mock_service.generate.return_value = AudioResult(

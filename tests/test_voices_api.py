@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from omnivoice_api.api.v1.voices import get_voice_service
-from omnivoice_api.core.exceptions import (
+from tts_api.api.v1.voices import get_voice_service
+from tts_api.core.exceptions import (
     InvalidReferenceAudioError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
-from omnivoice_api.main import app
+from tts_api.main import app
 
 
 @pytest.fixture

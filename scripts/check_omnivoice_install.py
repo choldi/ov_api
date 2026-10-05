@@ -59,7 +59,7 @@ def resolve_external_paths() -> tuple[Path, Path]:
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
 
-    from omnivoice_api.core.engine_paths import (
+    from tts_api.core.engine_paths import (
         default_install_dir,
         python_bin_from_venv,
     )
@@ -112,7 +112,7 @@ def check_external_install() -> bool:
         print(f"  ERROR: no existe el directorio de instalación: {install_dir}")
         return False
 
-    from omnivoice_api.core.engine_paths import python_bin_from_venv
+    from tts_api.core.engine_paths import python_bin_from_venv
 
     try:
         python_bin = python_bin_from_venv(venv_dir)

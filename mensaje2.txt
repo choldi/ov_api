@@ -1,0 +1,22 @@
+► ANSWER
+
+El archivo scripts/check_omnivoice_install.py ya está disponible en el chat, así que puedo editarlo cuando lo necesites.
+
+Respecto a tu pregunta, hay una inconsistencia relevante tras el cambio que hicimos al Makefile (CUDA 12.4 → CUDA 12.1):
+
+Archivos que convendría revisar/actualizar por coherencia:
+
+ 1 scripts/check_omnivoice_install.py (ya añadido ✅) — Contiene varias referencias a CUDA 12.4 que ahora son incorrectas:
+    • Docstring: "instalado vía uv sync desde el índice cu124"
+    • check_torch_cuda(): mensajes de error que dicen "no se usó el índice cu124" y "torch con CUDA 12.4"
+    • Mensaje final: "torch con CUDA 12.4 listos para usar la P2000"
+ 2 pyproject.toml (ya añadido ✅) — También tiene referencias desactualizadas:
+    • Comentario: "torch/torchaudio se pinean a 2.5.1+cu124"
+    • Sección [tool.uv]: índice pytorch-cu124 con URL https://download.pytorch.org/whl/cu124
+    • Comentarios sobre "CUDA 12.1" vs "cu124" mezclados
+
+Pregunta: ¿Quieres que actualice ambos archivos para que sean coherentes con CUDA 12.1 (cu121)? Si es así, indícame también:
+
+ • ¿El pin de versiones torch==2.5.1 / torchaudio==2.5.1 se mantiene? (existe 2.5.1+cu121 en el índice de PyTorch, así que es compatible)
+ • ¿El índice [tool.uv] debe cambiar a https://download.pytorch.org/whl/cu121?
+

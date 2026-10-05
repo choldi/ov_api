@@ -7,14 +7,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from omnivoice_api.api.v1.tts import get_tts_service
-from omnivoice_api.core.engine_client import AudioResult
-from omnivoice_api.core.exceptions import (
+from tts_api.api.v1.tts import get_tts_service
+from tts_api.core.engine_client import AudioResult
+from tts_api.core.exceptions import (
     UnsupportedInstructError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
-from omnivoice_api.main import app
+from tts_api.main import app
 
 
 def _make_wav() -> bytes:

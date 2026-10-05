@@ -1,0 +1,146 @@
+Resumen de cambios:
+
+ 1 omnivoice_api/core/omnivoice_engine.py — Reescrito completamente. Ya no usa subproceso CLI. Importa omnivoice directamente y usa OmniVoice.from_pretrained(...) +
+   model.generate(...). Las voces "stock" ahora se mapean a instruct (voice design). El clonado usa ref_audio. La salida de model.generate() (lista de np.ndarray a 24
+   kHz) se convierte a WAV PCM 16-bit.
+ 2 omnivoice_api/core/engine_client.py — Sin cambios funcionales, solo se elimina la referencia a python_bin y model_path en los logs.
+ 3 omnivoice_api/core/engine_paths.py — Marcado como legacy. Se conserva por compatibilidad pero ya no se usa.
+ 4 omnivoice_api/settings.py — Eliminados OMNIVOICE_INSTALL_DIR, OMNIVOICE_VENV_DIR, OMNIVOICE_PATH, OMNIVOICE_CLI_MODULE, ENGINE_STARTUP_TIMEOUT_SEC. Añadidos
+   OMNIVOICE_MODEL_ID (default k2-fsa/OmniVoice), OMNIVOICE_DTYPE (default float16), OMNIVOICE_WARMUP_ON_START (default False).
+ 5 omnivoice_api/services/tts.py — Sin cambios funcionales (la firma del engine client se mantiene).
+ 6 omnivoice_api/services/voice_service.py — Sin cambios funcionales.
+ 7 tests/conftest.py — Eliminado el aislamiento de venv externo. Ahora se fuerza OMNIVOICE_USE_MOCK=true para todos los tests.
+
+Requisitos para que funcione en producción:
+
+ • Instalar omnivoice en el mismo Python que ejecuta la API:
+
+
+   pip install omnivoice
+
+   # o desde GitHub:
+
+   pip install git+https://github.com/k2-fsa/OmniVoice.git
+
+ • Instalar también torch con CUDA y soundfile/numpy.
+ • Asegurarse de que OMNIVOICE_USE_MOCK=false en producción.
+ • La primera vez descargará el modelo de HuggingFace (~varios GB).
+
+Limitaciones conocidas:
+
+ • OmniVoice no soporta emotion/intensity directamente en generate(). Se aceptan los parámetros pero se ignoran (voice design cubre parcialmente el caso).
+ • Las "voces stock" son aproximaciones vía instruct; no son voces reales pre-entrenadas con esos IDs.
+ • El warmup real está deshabilitado por defecto (OMNIVOICE_WARMUP_ON_START=False) porque es costoso.
+
+
+Tokens: 26k sent, 13k received.
+
+env
+Add file to the chat? (Y)es/(N)o/(D)on't ask again [Yes]: y
+Voy a actualizar el archivo .env para reflejar los cambios en settings.py (eliminación de variables obsoletas y adición de las nuevas).
+
+env
+
+
+@@ -1,4 +1,5 @@
+ # =============================================================================
+ # -----------------------------------------------------------------------------
+ # Bloque 1 — Variables OBLIGATORIAS (sin valor por defecto útil en producción)
+ # -----------------------------------------------------------------------------
+
+-# Ruta al directorio de la instalación externa de OmniVoice (Path, str)
+-# Ejemplo Windows: C:/tools/omnivoice
+-# Ejemplo Linux:   /opt/omnivoice
+-OMNIVOICE_INSTALL_DIR=C:/AI/TTS/OMNIVOICE/OMNIVOICE
+-OMNIVOICE_PATH=C:/AI/TTS/OMNIVOICE/OMNIVOICE
+-
+-# Ruta al venv externo que contiene OmniVoice + CUDA (Path, str)
+-# Ejemplo Windows: C:/tools/omnivoice/.venv
+-# Ejemplo Linux:   /opt/omnivoice/.venv
+-OMNIVOICE_VENV_DIR=C:/AI/TTS/OMNIVOICE/OMNIVOICE_ENV
+-
+-# Ruta al modelo de OmniVoice (Path, str)
+-# Si se deja vacío, se deriva como: ${OMNIVOICE_INSTALL_DIR}/models
+-OMNIVOICE_MODEL_PATH=
+-
+ # URL de conexión a la base de datos (str)
+ # Por defecto usa SQLite local. Reservado para migrar a Postgres.
+ # Ejemplo Postgres: postgresql+asyncpg://user:pass@localhost:5432/omnivoice
+ DATABASE_URL=sqlite:///storage/omnivoice.db
+
+
+ # -----------------------------------------------------------------------------
+ APP_VERSION=0.1.0
+ DEBUG=false
+ API_PREFIX=/api/v1
+
++# --- OmniVoice Engine (API Python) ---
++# ID del modelo a cargar con OmniVoice.from_pretrained(...).
+-# venv externo (OMNIVOICE_VENV_DIR). No hay variable configurable para el
+-# módulo CLI: es fijo según el paquete omnivoice (k2-fsa).
+-# Dispositivo de inferencia (str)
++# --- OmniVoice Engine (API Python) ---
++# ID del modelo a cargar con OmniVoice.from_pretrained(...).
++# Puede ser un ID de HuggingFace (ej. "k2-fsa/OmniVoice") o una ruta local.
++OMNIVOICE_MODEL_ID=k2-fsa/OmniVoice
++# Dispositivo PyTorch para inferencia (str)
++# Valores: "cuda:0", "cpu", "mps", "xpu"
+ OMNIVOICE_DEVICE=cuda:0
++# Dtype del modelo (str)
++# Valores: "float16", "float32", "bfloat16"
++OMNIVOICE_DTYPE=float16
++# Si True, hace una síntesis de prueba al arrancar (puede ser lento).
++# Por defecto False para acelerar el arranque.
++OMNIVOICE_WARMUP_ON_START=false
+ # Lista de códigos de idioma ISO 639-1 soportados (list[str], separados por coma)
+ OMNIVOICE_LANGUAGES=es,en,zh,ja,ko,fr,de
+-# Módulo CLI de OmniVoice para invocar como `python -m <module>`
+-OMNIVOICE_CLI_MODULE=omnivoice.cli.infer
+ # Duración máxima permitida para audio de referencia en segundos (int)
+ MAX_REFERENCE_DURATION_SEC=30
+ # Número máximo de síntesis simultáneas (int). P2000 = 1
+ ENGINE_CONCURRENCY=1
+-# Timeout para el arranque del subprocess del engine en segundos (int)
+-ENGINE_STARTUP_TIMEOUT_SEC=30
+ # Timeout por petición al engine en segundos (int)
+ ENGINE_REQUEST_TIMEOUT_SEC=120
+
++# --- Mock / Real engine toggle ---
++# Si True, usa generación de tonos mock (útil para tests sin GPU/modelo).
++# Si False (por defecto), usa la API Python de OmniVoice directamente
++# (`from omnivoice import OmniVoice`).
++OMNIVOICE_USE_MOCK=false
+
+ # --- Storage ---
+ STORAGE_BASE_PATH=storage
+ VOICES_DIR=storage/voices
+ OUTPUTS_DIR=storage/outputs
+ CACHE_DIR=storage/cache
+ # TTL para archivos de output temporales en segundos (int)
+Cambios respecto al .env anterior:
+
+ • Eliminadas (ya no se usan con la API Python):
+    • OMNIVOICE_INSTALL_DIR
+    • OMNIVOICE_PATH
+    • OMNIVOICE_VENV_DIR
+    • OMNIVOICE_MODEL_PATH
+    • OMNIVOICE_CLI_MODULE
+    • ENGINE_STARTUP_TIMEOUT_SEC
+ • Añadidas:
+    • OMNIVOICE_MODEL_ID (default: k2-fsa/OmniVoice)
+    • OMNIVOICE_DTYPE (default: float16)
+    • OMNIVOICE_WARMUP_ON_START (default: false)
+
+Nota: Si tenías algún script o documentación que referencie las variables eliminadas (por ejemplo check-omnivoice-install), habrá que actualizarlos también. Avísame si
+quieres que revise alguno.
+
+
+Tokens: 41k sent, 1.0k received.
+Applied edit to env
+litellm.BadRequestError: OpenAIException - request (23538 tokens) exceeds the available context size (20736 tokens), try increasing it
+Commit e910587 chore: actualizar .env para usar API Python de OmniVoice
+Summarization failed for model openai/Qwen3-VL-4B: cannot schedule new futures after shutdown
+Summarization failed for model nvidia_nim/minimaxai/minimax-m3: cannot schedule new futures after shutdown
+summarizer unexpectedly failed for all models
+[INFO] Aider terminó con código 0.
+

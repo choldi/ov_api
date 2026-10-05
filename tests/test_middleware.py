@@ -7,7 +7,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.testclient import TestClient
 
-from omnivoice_api.middleware import APIKeyMiddleware, RequestIDMiddleware
+from tts_api.middleware import APIKeyMiddleware, RequestIDMiddleware
 
 # --- Helpers ---
 

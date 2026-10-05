@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from omnivoice_api.core import ffmpeg
-from omnivoice_api.core.audio import AudioValidator
-from omnivoice_api.core.exceptions import InvalidReferenceAudioError
+from tts_api.core import ffmpeg
+from tts_api.core.audio import AudioValidator
+from tts_api.core.exceptions import InvalidReferenceAudioError
 
 
 @pytest.fixture

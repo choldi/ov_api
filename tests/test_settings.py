@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from omnivoice_api.settings import Settings, get_settings
+from tts_api.settings import Settings, get_settings
 
 
 class TestSettingsDefaults:
@@ -13,7 +13,7 @@ class TestSettingsDefaults:
 
     def test_app_name(self) -> None:
         settings = Settings()
-        assert settings.APP_NAME == "OmniVoice API"
+        assert settings.APP_NAME == "TTS API"
 
     def test_app_version(self) -> None:
         settings = Settings()
@@ -27,13 +27,13 @@ class TestSettingsDefaults:
         settings = Settings()
         assert settings.API_PREFIX == "/api/v1"
 
-    def test_omnivoice_device(self) -> None:
+    def test_tts_device(self) -> None:
         settings = Settings()
-        assert settings.OMNIVOICE_DEVICE == "cuda:0"
+        assert settings.TTS_DEVICE == "cuda:0"
 
-    def test_omnivoice_dtype(self) -> None:
+    def test_tts_dtype(self) -> None:
         settings = Settings()
-        assert settings.OMNIVOICE_DTYPE == "float16"
+        assert settings.TTS_DTYPE == "float16"
 
     def test_database_url(self) -> None:
         settings = Settings()
@@ -97,7 +97,7 @@ class TestSettingsValidation:
 
     def test_invalid_omnivoice_dtype(self) -> None:
         with pytest.raises(ValidationError):
-            Settings(OMNIVOICE_DTYPE="bfloat16")
+            Settings(TTS_DTYPE="bfloat16")
 
 
 class TestGetSettings:

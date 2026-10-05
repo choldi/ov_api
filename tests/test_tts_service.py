@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from omnivoice_api.core.engine_client import AudioResult, OmniVoiceEngineClient
-from omnivoice_api.core.exceptions import (
+from tts_api.core.engine_client import AudioResult, OmniVoiceEngineClient
+from tts_api.core.exceptions import (
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
-from omnivoice_api.services.tts import TtsService
+from tts_api.services.tts import TtsService
 
 
 @pytest.fixture

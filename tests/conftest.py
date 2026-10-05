@@ -9,15 +9,15 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from omnivoice_api.core.engine_client import (
+from tts_api.core.engine_client import (
     AudioResult,
     EngineHealth,
     OmniVoiceEngineClient,
     StockVoice,
     reset_shared_engine_client,
 )
-from omnivoice_api.core.omnivoice_engine import GenerationParams, OmniVoiceEngine
-from omnivoice_api.main import app
+from tts_api.core.omnivoice_engine import GenerationParams, OmniVoiceEngine
+from tts_api.main import app
 
 
 @pytest_asyncio.fixture
@@ -71,7 +71,7 @@ def _isolate_external_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     yield
 
-    import omnivoice_api.core.omnivoice_engine as engine_mod
+    import tts_api.core.omnivoice_engine as engine_mod
 
     engine_mod._engine_instance = None
     OmniVoiceEngine._instance = None

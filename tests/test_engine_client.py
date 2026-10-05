@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from omnivoice_api.core.engine_client import (
+from tts_api.core.engine_client import (
     AudioResult,
     OmniVoiceEngineClient,
 )
-from omnivoice_api.core.exceptions import (
+from tts_api.core.exceptions import (
     UnsupportedInstructError,
 )
 
@@ -206,7 +206,7 @@ async def test_health() -> None:
 
 def test_shared_engine_client_es_un_singleton() -> None:
     """get_shared_engine_client reutiliza una única instancia por proceso."""
-    from omnivoice_api.core.engine_client import (
+    from tts_api.core.engine_client import (
         get_shared_engine_client,
         reset_shared_engine_client,
         set_shared_engine_client,
@@ -229,7 +229,7 @@ def test_shared_engine_client_es_un_singleton() -> None:
 
 def test_reset_shared_engine_client_crea_otra_instancia() -> None:
     """reset_shared_engine_client descarta el cliente compartido."""
-    from omnivoice_api.core.engine_client import (
+    from tts_api.core.engine_client import (
         get_shared_engine_client,
         reset_shared_engine_client,
     )

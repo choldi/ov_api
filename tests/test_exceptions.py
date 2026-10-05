@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from omnivoice_api.core.exceptions import (
+from tts_api.core.exceptions import (
     EngineUnavailableError,
     InvalidReferenceAudioError,
     OmniVoiceAPIError,

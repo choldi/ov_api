@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from omnivoice_api.core import ffmpeg
-from omnivoice_api.core.engines.pocket_tts_engine import PocketTTSEngine
-from omnivoice_api.core.exceptions import EngineUnavailableError
+from tts_api.core import ffmpeg
+from tts_api.core.engines.pocket_tts_engine import PocketTTSEngine
+from tts_api.core.exceptions import EngineUnavailableError
 
 
 def _make_wav_bytes(sample_rate: int = 24000, duration_sec: float = 1.0) -> bytes:

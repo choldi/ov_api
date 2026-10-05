@@ -169,7 +169,7 @@ test-load: install
 # Calidad de código
 lint: install
 	$(RUFF) check .
-	$(MYPY) omnivoice_api
+	$(MYPY) tts_api
 
 format: install
 	$(RUFF) format .
@@ -177,10 +177,10 @@ format: install
 
 # Servidor (engine se configura via TTS_ENGINE env var)
 run: install
-	TTS_ENGINE=$(ENGINE) $(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000
+	TTS_ENGINE=$(ENGINE) $(UVICORN) tts_api.main:app --host 0.0.0.0 --port 8000
 
 dev: install
-	TTS_ENGINE=$(ENGINE) $(UVICORN) omnivoice_api.main:app --host 0.0.0.0 --port 8000 --reload
+	TTS_ENGINE=$(ENGINE) $(UVICORN) tts_api.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Utilidades
 check-gpu: install

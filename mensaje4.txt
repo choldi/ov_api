@@ -1,0 +1,11 @@
+Make clean da error al borrar __pycache__
+PS C:\AI\TTS\ov_api> make clean
+rmdir /s /q .venv 2>nul || rem
+rmdir /s /q .mypy_cache 2>nul || rem
+rmdir /s /q .ruff_cache 2>nul || rem
+rmdir /s /q .pytest_cache 2>nul || rem
+rmdir /s /q storage\outputs\* 2>nul || rem
+for /d /r . %d in (__pycache__) do @if exist "%d" rmdir /s /q "%d"
+d" rmdir /s /q "d" was unexpected at this time.
+make: *** [Makefile:134: clean] Error 255
+

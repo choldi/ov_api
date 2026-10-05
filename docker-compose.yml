@@ -7,14 +7,14 @@ services:
       - "8000:8000"
     volumes:
       - ./storage:/app/storage
-      - ${OMNIVOICE_PATH:-/opt/omnivoice}:/omnivoice-external:ro
+      - ${TTS_PATH:-/opt/omnivoice}:/omnivoice-external:ro
     environment:
-      - OMNIVOICE_USE_MOCK=${OMNIVOICE_USE_MOCK:-false}
-      - OMNIVOICE_FALLBACK_TO_MOCK=true
+      - TTS_USE_MOCK=${TTS_USE_MOCK:-false}
+      - TTS_FALLBACK_TO_MOCK=true
       - DATABASE_URL=sqlite:///storage/omnivoice.db
       - API_KEY=${API_KEY:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - OMNIVOICE_INSTALL_DIR=/omnivoice-external
+      - TTS_INSTALL_DIR=/omnivoice-external
     deploy:
       resources:
         reservations:

@@ -1,4 +1,4 @@
-"""Example: Voice cloning workflow using the OmniVoice API.
+"""Example: Voice cloning workflow using the TTS API.
 
 This script demonstrates the complete voice cloning lifecycle:
 1. Clone a voice from a reference audio file
@@ -7,7 +7,7 @@ This script demonstrates the complete voice cloning lifecycle:
 4. Clean up (delete the cloned voice)
 
 Prerequisites:
-    - OmniVoice API server running (make run)
+    - TTS API server running (make run)
     - A reference audio file (WAV, 0.5-30 seconds, 8000-48000 Hz)
 
 Usage:

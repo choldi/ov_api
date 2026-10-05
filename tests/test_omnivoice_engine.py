@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from omnivoice_api.core.exceptions import (
+from tts_api.core.exceptions import (
     UnsupportedInstructError,
     VoiceNotFoundError,
 )
-from omnivoice_api.core.omnivoice_engine import (
+from tts_api.core.omnivoice_engine import (
     STOCK_VOICE_INSTRUCTS,
     SUPPORTED_EMOTIONS,
     VALID_INSTRUCT_TOKENS_EN,
@@ -27,7 +27,7 @@ def reset_engine():
     """Resetea el singleton del engine entre tests."""
     OmniVoiceEngine._instance = None
     OmniVoiceEngine._initialized = False
-    import omnivoice_api.core.omnivoice_engine as mod
+    import tts_api.core.omnivoice_engine as mod
 
     mod._engine_instance = None
     yield
@@ -219,7 +219,7 @@ async def test_get_engine_singleton() -> None:
 async def test_close_engine() -> None:
     await get_engine()
     await close_engine()
-    import omnivoice_api.core.omnivoice_engine as mod
+    import tts_api.core.omnivoice_engine as mod
 
     assert mod._engine_instance is None
 

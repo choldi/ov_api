@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from omnivoice_api.core.cleanup import (
+from tts_api.core.cleanup import (
     cleanup_expired_outputs,
     start_cleanup_task,
     stop_cleanup_task,
@@ -93,7 +93,7 @@ async def test_cleanup_exits_on_cancel(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_start_stop_cleanup_task(tmp_path: Path) -> None:
     """Test start and stop cleanup task lifecycle."""
-    import omnivoice_api.core.cleanup as mod
+    import tts_api.core.cleanup as mod
 
     mod._background_task = None
 
@@ -110,7 +110,7 @@ async def test_start_stop_cleanup_task(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_start_cleanup_task_idempotent(tmp_path: Path) -> None:
     """Test that starting cleanup twice does not create a second task."""
-    import omnivoice_api.core.cleanup as mod
+    import tts_api.core.cleanup as mod
 
     mod._background_task = None
 

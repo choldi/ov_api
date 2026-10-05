@@ -190,7 +190,7 @@ curl -X POST "http://localhost:8000/api/v1/conversations" \
 
 ```
 ov_api/
-├── omnivoice_api/
+├── tts_api/
 │   ├── api/v1/             # Routers FastAPI
 │   ├── core/
 │   │   ├── engine_base.py       # ABC + EngineCapabilities

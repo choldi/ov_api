@@ -8,8 +8,8 @@ from uuid import uuid4
 
 import pytest
 
-from omnivoice_api.core.exceptions import VoiceNotFoundError
-from omnivoice_api.repositories.voice_repository import VoiceRepository
+from tts_api.core.exceptions import VoiceNotFoundError
+from tts_api.repositories.voice_repository import VoiceRepository
 
 
 @pytest.fixture

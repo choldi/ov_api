@@ -8,14 +8,14 @@ from uuid import uuid4
 
 import pytest
 
-from omnivoice_api.core.audio import AudioValidator
-from omnivoice_api.core.exceptions import (
+from tts_api.core.audio import AudioValidator
+from tts_api.core.exceptions import (
     InvalidReferenceAudioError,
     UnsupportedLanguageError,
     VoiceNotFoundError,
 )
-from omnivoice_api.repositories.voice_repository import VoiceRepository
-from omnivoice_api.services.voice_service import VoiceService
+from tts_api.repositories.voice_repository import VoiceRepository
+from tts_api.services.voice_service import VoiceService
 
 
 @pytest.fixture

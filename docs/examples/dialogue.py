@@ -1,10 +1,10 @@
-"""Example: Multi-voice dialogue using the OmniVoice API.
+"""Example: Multi-voice dialogue using the TTS API.
 
 This script demonstrates the conversations endpoint to generate
 a dialogue between two different voices.
 
 Prerequisites:
-    - OmniVoice API server running (make run)
+    - TTS API server running (make run)
 
 Usage:
     python docs/examples/dialogue.py

@@ -1,0 +1,44 @@
+Ejecuto make install y luego make dev. Al lanzar make dev, me da este error:
+
+The procedure entry point torch_library_impl could not be located in the dynamic link library C:\AI\TTS\ov_api\.venv\Lib\site-packages\torchaudio\lib\_torchaudio.pyd.
+
+2026-09-07 11:30:12,188 [ERROR] omnivoice_api.core.omnivoice_engine: Error cargando OmniVoice: [WinError 127] The specified procedure could not be found
+2026-09-07 11:30:12,189 [ERROR] omnivoice_api.main: Fallo inicializando engine: No se pudo cargar el modelo OmniVoice: [WinError 127] The specified procedure could not be found
+Traceback (most recent call last):
+  File "C:\AI\TTS\ov_api\omnivoice_api\core\omnivoice_engine.py", line 151, in initialize
+    from omnivoice import OmniVoice
+  File "C:\AI\TTS\ov_api\.venv\Lib\site-packages\omnivoice\__init__.py", line 22, in <module>
+    from omnivoice.models.omnivoice import (
+  File "C:\AI\TTS\ov_api\.venv\Lib\site-packages\omnivoice\models\omnivoice.py", line 43, in <module>
+    import torchaudio
+  File "C:\AI\TTS\ov_api\.venv\Lib\site-packages\torchaudio\__init__.py", line 7, in <module>
+    from . import _extension  # noqa  # usort: skip
+    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\AI\TTS\ov_api\.venv\Lib\site-packages\torchaudio\_extension\__init__.py", line 30, in <module>
+    _IS_TORCHAUDIO_EXT_AVAILABLE = _load_lib("_torchaudio")
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\AI\TTS\ov_api\.venv\Lib\site-packages\torchaudio\_extension\utils.py", line 56, in _load_lib
+    torch.ops.load_library(paths[0])
+  File "C:\AI\TTS\ov_api\.venv\Lib\site-packages\torch\_ops.py", line 1295, in load_library
+    ctypes.CDLL(path)
+  File "C:\Users\Administrator\scoop\apps\python311\current\Lib\ctypes\__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [WinError 127] The specified procedure could not be found
+
+Puede estar relacionado con que pytorch no esté actualizado
+En una instancia que omnivoice tengo la versión siguiente;
+>>> import torch
+>>> print (torch.__version__)
+2.5.1+cu121
+
+En cambio, en la instalación que realiza make me importa esta versión:
+PS C:\AI\ov_api> .\.venv\Scripts\python.exe
+Python 3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)] on win32
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import torch
+>>> print (torch.__version__)
+2.4.1+cpu
+
+La versión que funciona es la 2.5.1+cu121 (GPU)
+La compilación se puede hacer en el equipo de destino, con los módulos necesarios (VC++, creo)

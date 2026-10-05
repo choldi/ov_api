@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from omnivoice_api.api.v1.tts import get_tts_service
-from omnivoice_api.api.v1.voices import get_engine_client
-from omnivoice_api.main import app
+from tts_api.api.v1.tts import get_tts_service
+from tts_api.api.v1.voices import get_engine_client
+from tts_api.main import app
 
 
 @pytest.fixture
@@ -65,7 +65,7 @@ async def test_tts_endpoint_success(mock_tts_service: AsyncMock) -> None:
 @pytest.mark.asyncio
 async def test_tts_endpoint_voice_not_found() -> None:
     """Test de error 404 cuando la voz no se encuentra."""
-    from omnivoice_api.core.exceptions import VoiceNotFoundError
+    from tts_api.core.exceptions import VoiceNotFoundError
 
     mock_service = AsyncMock()
     mock_service.synthesize_stock.side_effect = VoiceNotFoundError("voz-inexistente", "stock")
@@ -92,7 +92,7 @@ async def test_tts_endpoint_voice_not_found() -> None:
 @pytest.mark.asyncio
 async def test_tts_endpoint_unsupported_language() -> None:
     """Test de error 400 cuando el idioma no está soportado."""
-    from omnivoice_api.core.exceptions import UnsupportedLanguageError
+    from tts_api.core.exceptions import UnsupportedLanguageError
 
     mock_service = AsyncMock()
     mock_service.synthesize_stock.side_effect = UnsupportedLanguageError("xx", ["es", "en"])
@@ -119,7 +119,7 @@ async def test_tts_endpoint_unsupported_language() -> None:
 @pytest.mark.asyncio
 async def test_voices_endpoint_success() -> None:
     """Test de éxito del endpoint de voces."""
-    from omnivoice_api.core.engine_client import StockVoice
+    from tts_api.core.engine_client import StockVoice
 
     mock_voices = [
         StockVoice(voice_id="es-mx-male", language="es", gender="male", name="Spanish MX Male"),
@@ -160,7 +160,7 @@ async def test_voices_endpoint_success() -> None:
 @pytest.mark.asyncio
 async def test_voices_endpoint_no_filter() -> None:
     """Test del endpoint de voces sin filtro de idioma."""
-    from omnivoice_api.core.engine_client import StockVoice
+    from tts_api.core.engine_client import StockVoice
 
     mock_voices = [
         StockVoice(voice_id="es-mx-male", language="es", gender="male", name="Spanish MX Male"),

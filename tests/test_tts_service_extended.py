@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from omnivoice_api.core.engine_client import AudioResult
-from omnivoice_api.core.exceptions import (
+from tts_api.core.engine_client import AudioResult
+from tts_api.core.exceptions import (
     VoiceNotFoundError,
 )
-from omnivoice_api.services.tts import TtsService
+from tts_api.services.tts import TtsService
 
 
 @pytest.mark.asyncio
@@ -262,7 +262,7 @@ async def test_close_no_engine() -> None:
 @pytest.mark.asyncio
 async def test_conversation_with_cloned_voice() -> None:
     """Test de conversación multi-voz con voz clonada."""
-    from omnivoice_api.services.conversation import ConversationService, ConversationTurn
+    from tts_api.services.conversation import ConversationService, ConversationTurn
 
     mock_tts_service = AsyncMock()
     mock_tts_service.synthesize_stock.return_value = AudioResult(
@@ -288,7 +288,7 @@ async def test_conversation_with_cloned_voice() -> None:
 @pytest.mark.asyncio
 async def test_conversation_rejects_fewer_than_two_turns() -> None:
     """Test de error cuando hay menos de 2 turnos."""
-    from omnivoice_api.services.conversation import ConversationService, ConversationTurn
+    from tts_api.services.conversation import ConversationService, ConversationTurn
 
     tts_service = AsyncMock()
     convo_service = ConversationService(tts_service=tts_service)
@@ -302,7 +302,7 @@ async def test_conversation_rejects_fewer_than_two_turns() -> None:
 @pytest.mark.asyncio
 async def test_conversation_rejects_empty_text() -> None:
     """Test de error cuando un turno tiene texto vacío."""
-    from omnivoice_api.services.conversation import ConversationService, ConversationTurn
+    from tts_api.services.conversation import ConversationService, ConversationTurn
 
     tts_service = AsyncMock()
     convo_service = ConversationService(tts_service=tts_service)

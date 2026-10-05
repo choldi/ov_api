@@ -1,0 +1,307 @@
+Metadata-Version: 2.4
+Name: tts-api
+Version: 0.2.0
+Summary: API REST multi-engine para síntesis de voz (OmniVoice, Pocket TTS, EdgeTTS)
+Author: TTS API Team
+License: MIT
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Multimedia :: Sound/Audio :: Speech
+Requires-Python: <3.13,>=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.32.0
+Requires-Dist: pydantic>=2.9.0
+Requires-Dist: pydantic-settings>=2.6.0
+Requires-Dist: python-multipart>=0.0.12
+Requires-Dist: loguru>=0.7.0
+Requires-Dist: soundfile>=0.12.1
+Requires-Dist: pydub>=0.25.1
+Requires-Dist: lameenc>=1.2.0
+Requires-Dist: librosa>=0.10.0
+Requires-Dist: sqlalchemy>=2.0.30
+Requires-Dist: alembic>=1.13.1
+Requires-Dist: aiosqlite>=0.19.0
+Requires-Dist: structlog>=24.4.0
+Requires-Dist: prometheus-fastapi-instrumentator>=7.0.0
+Requires-Dist: slowapi>=0.1.9
+Requires-Dist: httpx>=0.27.0
+Provides-Extra: omnivoice
+Requires-Dist: torch==2.5.1; extra == "omnivoice"
+Requires-Dist: torchaudio==2.5.1; extra == "omnivoice"
+Requires-Dist: huggingface_hub>=0.25.0; extra == "omnivoice"
+Provides-Extra: pocket-tts
+Requires-Dist: pocket-tts>=3.0.0; extra == "pocket-tts"
+Requires-Dist: scipy>=1.11.0; extra == "pocket-tts"
+Provides-Extra: edgetts
+Requires-Dist: edge-tts>=7.0.0; extra == "edgetts"
+Provides-Extra: transcribe
+Requires-Dist: faster-whisper>=1.0.0; extra == "transcribe"
+Provides-Extra: all-engines
+Requires-Dist: tts-api[edgetts,omnivoice,pocket_tts]; extra == "all-engines"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.24.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0.0; extra == "dev"
+Requires-Dist: pytest-mock>=3.14.0; extra == "dev"
+Requires-Dist: ruff>=0.7.0; extra == "dev"
+Requires-Dist: mypy>=1.13.0; extra == "dev"
+Requires-Dist: pre-commit>=4.0.0; extra == "dev"
+Requires-Dist: ipython>=8.24.0; extra == "dev"
+Requires-Dist: ipdb>=0.13.13; extra == "dev"
+Provides-Extra: load
+Requires-Dist: locust>=2.32.0; extra == "load"
+Dynamic: license-file
+
+# TTS API — Multi-Engine
+
+> **EN:** REST API for multilingual TTS with **multiple engine backends**: Pocket TTS (CPU, voice cloning), EdgeTTS (cloud, 400+ voices incl. Catalan), and OmniVoice (GPU, full features). Selectable via `TTS_ENGINE` env var with language-based routing support.
+
+API REST para síntesis de voz (TTS) multilingüe con **múltiples engines**:
+- **Pocket TTS** — CPU, clonado de voz, es/en/fr
+- **EdgeTTS** — Cloud, 400+ voces (incluye catalán ca-ES), sin clonado
+- **OmniVoice** — GPU, emociones, voice design, instrucciones
+
+> Ver [`docs/Architecture.md`](docs/Architecture.md) para detalles de arquitectura.
+
+## Características
+
+- 🔀 **Multi-engine** — cambia de motor con `TTS_ENGINE=pocket_tts|edgetts|omnivoice|mock|routed`
+- 🌐 **Enrutado por idioma** — `TTS_ENGINE=routed` distribuye es/en/fr → Pocket TTS, ca → EdgeTTS
+- 🎙️ **TTS multilingüe** con voces stock predefinidas
+- 🔄 **Clonado de voz** multi-engine (`engines=pocket_tts,omnivoice`)
+- 🏷️ **Etiquetado por engine** — cada voz clonada sabe para qué engines sirve
+- 🎭 **Emociones y singing** (solo OmniVoice): `happy`, `sad`, `angry`, `excited`, `calm`, `nervous`, `whisper`, `singing`
+- 🎨 **Voice design libre** con tokens de atributos (solo OmniVoice)
+- 💬 **Conversaciones multi-voz** con turnos y pausas configurables
+- 📝 **Auto-transcripción** de audio de referencia (opcional, `faster-whisper`)
+- 📦 **Persistencia SQLite** para metadatos de voces clonadas
+- 📊 **Observabilidad** con logs estructurados y métricas Prometheus
+
+## Pre-requisitos
+
+- **Python 3.11+**
+- **FFmpeg** (para conversión de audio con pydub)
+- **GPU NVIDIA con CUDA** — solo necesario para `TTS_ENGINE=omnivoice`
+- **Internet** — necesario para `TTS_ENGINE=edgetts` (cloud) y descarga de modelos Pocket TTS
+
+## Instalación rápida
+
+```bash
+# Clonar repositorio
+git clone <repo-url>
+cd ov_api
+
+# Instalar con un engine específico
+make install ENGINE=pocket_tts    # CPU, clonado de voz (recomendado)
+make install ENGINE=edgetts       # Cloud, sin GPU
+make install ENGINE=omnivoice     # GPU, full features
+make install ENGINE=all           # Todos los engines
+
+# Iniciar en modo desarrollo
+TTS_ENGINE=pocket_tts make dev
+```
+
+La API estará disponible en:
+- **API**: http://localhost:8000/api/v1
+- **Docs (Swagger)**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **Health**: http://localhost:8000/api/v1/health
+
+## Configuración
+
+Copia `.env.example` a `.env` y ajusta:
+
+```bash
+cp .env.example .env
+```
+
+### Variables principales
+
+| Variable | Descripción | Default |
+|----------|-------------|---------|
+| `TTS_ENGINE` | Engine activo: `pocket_tts`, `edgetts`, `omnivoice`, `mock`, `routed` | `omnivoice` |
+| `TTS_ENGINES` | JSON de enrutado por idioma (cuando `TTS_ENGINE=routed`) | `""` |
+| `POCKET_TTS_MODEL` | Modelo Pocket TTS | `kyutai/pocket-tts-100m-en` |
+| `EDGETTS_VOICE_PREFIX` | Locale por defecto EdgeTTS | `es-MX` |
+| `AUTO_TRANSCRIBE` | Auto-transcribir audio de referencia | `false` |
+| `DATABASE_URL` | URL de SQLite | `sqlite:///storage/omnivoice.db` |
+| `API_KEY` | API Key opcional | `""` |
+| `LOG_LEVEL` | Nivel de logging | `INFO` |
+
+### Enrutado multi-engine (routed)
+
+```env
+TTS_ENGINE=routed
+TTS_ENGINES={"es":"pocket_tts","en":"pocket_tts","fr":"pocket_tts","ca":"edgetts","_default":"pocket_tts"}
+```
+
+## Endpoints principales
+
+### Health
+- `GET /api/v1/health` — Estado general + engine activo
+- `GET /api/v1/health/live` — Liveness probe
+- `GET /api/v1/health/ready` — Readiness probe
+
+### TTS
+- `POST /api/v1/tts` — Síntesis con voz stock/clonada
+- `POST /api/v1/tts/instruct` — Síntesis con instruct (solo OmniVoice)
+- `GET /api/v1/tts/voice-design/tokens` — Tokens de voice design
+
+### Voces
+- `GET /api/v1/voices/stock` — Lista voces stock
+- `POST /api/v1/voices/clone` — Clonar voz (`engines=pocket_tts,omnivoice`)
+- `GET /api/v1/voices/cloned` — Listar voces clonadas (`?engine=pocket_tts`)
+- `GET /api/v1/voices/cloned/{id}` — Detalle voz clonada
+- `DELETE /api/v1/voices/cloned/{id}` — Eliminar voz clonada
+
+### Conversaciones y Emociones
+- `POST /api/v1/conversations` — Diálogo multi-voz
+- `GET /api/v1/emotions` — Emociones soportadas
+
+## Ejemplos de uso
+
+### TTS con voz stock (Español)
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hola, esto es una prueba.", "voice_id": "es-mx-female", "language": "es"}' \
+  --output output.wav
+```
+
+### TTS en catalán (EdgeTTS)
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Bon dia, això és una prova.", "voice_id": "ca-female", "language": "ca"}' \
+  --output catala.wav
+```
+
+### Clonar voz para múltiples engines
+```bash
+curl -X POST "http://localhost:8000/api/v1/voices/clone" \
+  -F "name=mi_voz" \
+  -F "language=es" \
+  -F "reference_audio=@reference.wav" \
+  -F "engines=pocket_tts,omnivoice" \
+  -F "ref_text=Transcripción del audio de referencia"
+```
+
+### Sintetizar con voz clonada
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Esta es mi voz clonada.", "voice_id": "<VOICE_ID>", "language": "es"}' \
+  --output clonada.wav
+```
+
+### Listar voces por engine
+```bash
+curl "http://localhost:8000/api/v1/voices/cloned?engine=pocket_tts"
+```
+
+### TTS con emoción (solo OmniVoice)
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "¡Qué alegría verte!", "voice_id": "es-mx-male", "language": "es", "emotion": "happy"}' \
+  --output happy.wav
+```
+
+### Voice design con instruct (solo OmniVoice)
+```bash
+curl -X POST "http://localhost:8000/api/v1/tts/instruct" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello, this is a custom voice.", "instruct": "female, young adult, british accent", "language": "en"}' \
+  --output design.wav
+```
+
+### Conversación multi-voz
+```bash
+curl -X POST "http://localhost:8000/api/v1/conversations" \
+  -H "Content-Type: application/json" \
+  -d '{"turns": [{"voice_id": "voz_1", "text": "Hola"}, {"voice_id": "voz_2", "text": "¿Cómo estás?"}], "pause_ms": 300}' \
+  --output dialogo.wav
+```
+
+## Capacidades por engine
+
+| Feature | Pocket TTS | EdgeTTS | OmniVoice | Mock |
+|---------|:----------:|:-------:|:---------:|:----:|
+| Voces stock | ✅ | ✅ | ✅ | ✅ |
+| Clonado de voz | ✅ | ❌ | ✅ | ❌ |
+| Voice design (instruct) | ❌ | ❌ | ✅ | ✅ |
+| Emociones | ❌ | ❌ | ✅ | ❌ |
+| Idiomas es/en/fr | ✅ | ✅ | ✅ | ✅ |
+| Catalán (ca) | ❌ | ✅ | ❌ | ✅ |
+| GPU requerida | ❌ | ❌ | ✅ | ❌ |
+| Internet requerido | Solo 1ª vez | ✅ | ❌ | ❌ |
+
+## Estructura del proyecto
+
+```
+ov_api/
+├── omnivoice_api/
+│   ├── api/v1/             # Routers FastAPI
+│   ├── core/
+│   │   ├── engine_base.py       # ABC + EngineCapabilities
+│   │   ├── engine_factory.py    # Factory (TTS_ENGINE → engine)
+│   │   ├── engine_client.py     # Cliente con logging/validación
+│   │   ├── engine_pool.py       # Semáforo de concurrencia
+│   │   ├── engines/             # Implementaciones
+│   │   │   ├── pocket_tts_engine.py
+│   │   │   ├── edgetts_engine.py
+│   │   │   ├── mock_engine.py
+│   │   │   ├── omnivoice_engine_adapter.py
+│   │   │   └── routed_engine.py
+│   │   ├── audio.py             # Validación de audio (24k/22k)
+│   │   └── exceptions.py
+│   ├── services/           # TtsService, VoiceService, ConversationService
+│   ├── repositories/       # VoiceRepository (SQLite)
+│   ├── settings.py         # Configuración
+│   └── main.py             # Entry point
+├── docs/
+├── tests/
+├── storage/
+├── pyproject.toml
+├── Makefile
+└── README.md
+```
+
+## Desarrollo
+
+```bash
+make test              # Tests con cobertura
+make lint              # ruff + mypy
+make format            # Formateo automático
+make dev               # Servidor desarrollo con reload
+make install ENGINE=pocket_tts  # Instalar con engine específico
+```
+
+## Despliegue
+
+```bash
+# Instalar con Pocket TTS + EdgeTTS
+make install-all
+
+# Configurar enrutado en .env
+echo 'TTS_ENGINE=routed' >> .env
+echo 'TTS_ENGINES={"es":"pocket_tts","ca":"edgetts","_default":"pocket_tts"}' >> .env
+
+# Iniciar
+make run
+```
+
+Ver `docs/deployment/` para guías con Docker y Nginx/Caddy.
+
+## Licencia
+
+MIT License — ver `LICENSE` para detalles.
+
+---
+
+**EN:** See [English quick reference](#english-quick-reference) below the structure section. For full English docs, see `docs/api_spec_simplified.md`.

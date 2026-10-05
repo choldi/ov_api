@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from omnivoice_api.core.embedding_cache import EmbeddingCache
+from tts_api.core.embedding_cache import EmbeddingCache
 
 
 @pytest.fixture

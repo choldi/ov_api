@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from omnivoice_api.core.engine_pool import EnginePool, get_engine_pool
+from tts_api.core.engine_pool import EnginePool, get_engine_pool
 
 
 class TestEnginePool:
@@ -82,7 +82,7 @@ class TestGetEnginePool:
     def test_returns_singleton(self) -> None:
         """Test de que retorna la misma instancia."""
         # Reset global state
-        import omnivoice_api.core.engine_pool as mod
+        import tts_api.core.engine_pool as mod
 
         mod._engine_pool = None
 
@@ -92,7 +92,7 @@ class TestGetEnginePool:
 
     def test_default_max_concurrent(self) -> None:
         """Test de que el pool por defecto tiene max_concurrent=2."""
-        import omnivoice_api.core.engine_pool as mod
+        import tts_api.core.engine_pool as mod
 
         mod._engine_pool = None
 

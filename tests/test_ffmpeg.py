@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from omnivoice_api.core import ffmpeg
+from tts_api.core import ffmpeg
 
 requires_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg no disponible")
 
