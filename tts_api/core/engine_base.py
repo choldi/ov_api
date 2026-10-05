@@ -84,3 +84,18 @@ class TtsEngineBase(ABC):
 
     async def close(self) -> None:
         """Release resources (no-op by default)."""
+
+    async def list_available_models(self) -> list[str]:
+        """Optional: List available models for this engine.
+        Returns empty list if not applicable or not implemented."""
+        return []
+
+    async def list_available_features(self) -> dict:
+        """Optional: Return detailed feature information.
+        Default implementation returns capabilities as dict."""
+        return self.capabilities.__dict__
+
+    async def change_model(self, model_name: str) -> bool:
+        """Optional: Attempt to change model at runtime.
+        Returns False if not supported or fails."""
+        return False

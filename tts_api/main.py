@@ -42,14 +42,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-import tts_api.api.v1 import conversations, system, tts, voices
-import tts_api.core.cleanup import start_cleanup_task, stop_cleanup_task
-import tts_api.core.engine_client import (
+from tts_api.api.v1 import conversations, system, tts, voices
+from tts_api.core.cleanup import start_cleanup_task, stop_cleanup_task
+from tts_api.core.engine_client import (
     reset_shared_engine_client,
     set_shared_engine_client,
 )
-import tts_api.middleware import APIKeyMiddleware, RequestIDMiddleware
-import tts_api.settings import get_settings
+from tts_api.middleware import APIKeyMiddleware, RequestIDMiddleware
+from tts_api.settings import get_settings
 
 # Global engine reference for lifespan
 _active_engine = None
@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     logger.info("Application startup: inicializando engine '%s'...", engine_name)
 
     try:
-        import tts_api.core.engine_factory import create_engine
+        from tts_api.core.engine_factory import create_engine
 
         _active_engine = create_engine(engine_name)
         # El cliente queda compartido por el proceso para que todas las
@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
                 "la API arrancará con mock. Error: %s",
                 e,
             )
-            import tts_api.core.engines.mock_engine import MockEngine
+            from tts_api.core.engines.mock_engine import MockEngine
 
             _active_engine = MockEngine()
             await set_shared_engine_client(_active_engine).start()
@@ -195,7 +195,7 @@ async def list_emotions() -> list[dict]:
         "singing": "Estilo cantado / melódico",
     }
     # OmniVoice-specific emotions
-    import tts_api.core.omnivoice_engine import SUPPORTED_EMOTIONS
+    from tts_api.core.omnivoice_engine import SUPPORTED_EMOTIONS
 
     return [
         {"id": e, "name": e.capitalize(), "description": descriptions.get(e, "")}
@@ -254,7 +254,7 @@ async def readiness() -> JSONResponse:
 
     # Only check OmniVoice-specific paths for omnivoice engine
     if _active_engine.name == "omnivoice":
-        import tts_api.core.engine_paths import default_install_dir
+        from tts_api.core.engine_paths import default_install_dir
 
         checks["install_dir_exists"] = default_install_dir().exists()
         checks["venv_python_exists"] = settings.python_bin.exists()

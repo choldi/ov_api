@@ -359,6 +359,36 @@ class OmniVoiceEngineClient:
             sample_rate=validation["sample_rate"],
         )
 
+    async def list_available_models(self) -> list[str]:
+        """Optional: List available models for this engine.
+        Delegates to engine if implemented, returns empty list otherwise."""
+        if not self._started:
+            await self.start()
+        assert self._engine is not None
+        if hasattr(self._engine, 'list_available_models'):
+            return await self._engine.list_available_models()
+        return []
+
+    async def list_available_features(self) -> dict:
+        """Optional: Return detailed feature information.
+        Delegates to engine if implemented, returns capabilities dict otherwise."""
+        if not self._started:
+            await self.start()
+        assert self._engine is not None
+        if hasattr(self._engine, 'list_available_features'):
+            return await self._engine.list_available_features()
+        return self._engine.capabilities.__dict__
+
+    async def change_model(self, model_name: str) -> bool:
+        """Optional: Attempt to change model at runtime.
+        Delegates to engine if implemented, returns False otherwise."""
+        if not self._started:
+            await self.start()
+        assert self._engine is not None
+        if hasattr(self._engine, 'change_model'):
+            return await self._engine.change_model(model_name)
+        return False
+
 
 # ---------------------------------------------------------------------------
 # Cliente compartido por el proceso.

@@ -35,6 +35,16 @@ def _create_single_engine(name: str) -> TtsEngineBase:
 
         return OmniVoiceAdapter()
 
+    if name == "zono2":
+        from tts_api.core.engines.zono2_engine import Zono2Engine
+
+        return Zono2Engine()
+
+    if name == "kokoro":
+        from tts_api.core.engines.kokoro_engine import KokoroEngine
+
+        return KokoroEngine()
+
     raise ValueError(f"Engine desconocido: '{name}'")
 
 

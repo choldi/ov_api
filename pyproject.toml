@@ -65,13 +65,25 @@ pocket_tts = [
 edgetts = [
     "edge-tts>=7.0.0",
 ]
+# Engine: ZONO2 (TTS model)
+zono2 = [
+    # Add actual ZONO2 dependencies here when known
+    # For now, placeholder
+    "numpy>=1.24.0",
+]
+# Engine: Kokoro (TTS model)
+kokoro = [
+    # Add actual Kokoro dependencies here when known
+    # For now, placeholder
+    "numpy>=1.24.0",
+]
 # Auto-transcription of reference audio (optional)
 transcribe = [
     "faster-whisper>=1.0.0",
 ]
 # All engines
 all-engines = [
-    "tts-api[omnivoice,pocket_tts,edgetts]",
+    "tts-api[omnivoice,pocket_tts,edgetts,zono2,kokoro]",
 ]
 # Dev / test
 dev = [
