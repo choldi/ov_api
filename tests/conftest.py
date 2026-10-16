@@ -59,10 +59,10 @@ def _isolate_external_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     scripts.mkdir(parents=True, exist_ok=True)
     (scripts / ("python.exe" if sys.platform == "win32" else "python")).touch()
 
-    monkeypatch.setenv("OMNIVOICE_INSTALL_DIR", str(fake_install))
-    monkeypatch.setenv("OMNIVOICE_VENV_DIR", str(fake_venv))
-    monkeypatch.setenv("OMNIVOICE_USE_MOCK", "true")
-    monkeypatch.setenv("OMNIVOICE_FALLBACK_TO_MOCK", "false")
+    monkeypatch.setenv("TTS_INSTALL_DIR", str(fake_install))
+    monkeypatch.setenv("TTS_VENV_DIR", str(fake_venv))
+    monkeypatch.setenv("TTS_USE_MOCK", "true")
+    monkeypatch.setenv("TTS_FALLBACK_TO_MOCK", "false")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
 
     # El cliente de engine es un singleton de proceso: se limpia en cada test
