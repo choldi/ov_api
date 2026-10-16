@@ -81,9 +81,20 @@ kokoro = [
 transcribe = [
     "faster-whisper>=1.0.0",
 ]
+# Engine: Piper (ONNX local, CPU-first, incluye catalan)
+piper = [
+    "piper-tts>=1.3.0",
+]
+# Engine: Chatterbox Multilingual v3 (GPU, clonado zero-shot)
+chatterbox = [
+    "chatterbox-tts>=0.1.0",
+    "torch>=2.5.0",
+    "torchaudio>=2.5.0",
+    "soundfile>=0.12.0",
+]
 # All engines
 all-engines = [
-    "tts-api[omnivoice,pocket_tts,edgetts,zono2,kokoro]",
+    "tts-api[omnivoice,pocket_tts,edgetts,zono2,kokoro,piper,chatterbox]",
 ]
 # Dev / test
 dev = [
