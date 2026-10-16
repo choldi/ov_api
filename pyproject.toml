@@ -175,8 +175,14 @@ unfixable = ["TID252", "PTH118", "PTH120", "PTH123"]
 # Scripts y ejemplos de desarrollo (stándalone, no forman parte del paquete).
 "scripts/*" = ["PLR2004", "PLW2901", "PTH123"]
 "docs/examples/*" = ["PLR2004", "PTH123"]
-# Hooks opcionales de la ABC de engines (warmup/close no abstractos a propósito).
-"tts_api/core/engine_base.py" = ["B027"]
+# Hooks opcionales de la ABC de engines (warmup/close no abstractos a propósito)
+# y change_model(model_name) que las implementaciones no usan.
+"tts_api/core/engine_base.py" = ["B027", "ARG002"]
+# Repositorios: create()/list() con la misma deuda de aridad que api/v1 y engines.
+"tts_api/repositories/voice_repository.py" = ["PLR0913", "PLR0917"]
+# Cache perezoso de whisper en modulo con `global` (mismo motivo que
+# cleanup.py / embedding_cache.py / engine_pool.py / engine_client.py).
+"tts_api/services/transcription.py" = ["PLW0603"]
 
 [tool.ruff.format]
 quote-style = "double"

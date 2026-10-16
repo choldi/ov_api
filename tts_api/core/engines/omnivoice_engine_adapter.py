@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from pathlib import Path
 
 from tts_api.core import ffmpeg
 from tts_api.core.engine_base import EngineCapabilities, TtsEngineBase
@@ -14,6 +15,9 @@ from tts_api.core.omnivoice_engine import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Sample rate exigido para el audio de referencia de OmniVoice (Hz).
+REFERENCE_SAMPLE_RATE = 22050
 
 
 class OmniVoiceAdapter(TtsEngineBase):
@@ -84,10 +88,8 @@ class OmniVoiceAdapter(TtsEngineBase):
             )
         finally:
             if ref_path != reference_audio_path:
-                import os
-
                 with contextlib.suppress(Exception):
-                    os.unlink(ref_path)
+                    Path(ref_path).unlink()
 
     @staticmethod
     def _needs_resample(audio_path: str) -> bool:
@@ -95,7 +97,7 @@ class OmniVoiceAdapter(TtsEngineBase):
             import soundfile as sf
 
             info = sf.info(audio_path)
-            return info.samplerate != 22050 or info.channels != 1
+            return info.samplerate != REFERENCE_SAMPLE_RATE or info.channels != 1
         except Exception:
             return False
 
@@ -109,15 +111,15 @@ class OmniVoiceAdapter(TtsEngineBase):
         data, sr = sf.read(audio_path, dtype="float32")
         if data.ndim > 1:
             data = data.mean(axis=1)
-        if sr != 22050:
-            data = ffmpeg.resample(data, sr, 22050)
+        if sr != REFERENCE_SAMPLE_RATE:
+            data = ffmpeg.resample(data, sr, REFERENCE_SAMPLE_RATE)
             if data is None:
                 raise EngineUnavailableError(
                     "No se puede remuestrear la referencia a 22050Hz: falta el binario 'ffmpeg'"
                 )
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            sf.write(tmp.name, data, 22050, subtype="PCM_16")
+            sf.write(tmp.name, data, REFERENCE_SAMPLE_RATE, subtype="PCM_16")
             return tmp.name
 
     async def synthesize_instruct(

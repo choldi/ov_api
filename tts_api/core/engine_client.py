@@ -365,7 +365,7 @@ class OmniVoiceEngineClient:
         if not self._started:
             await self.start()
         assert self._engine is not None
-        if hasattr(self._engine, 'list_available_models'):
+        if hasattr(self._engine, "list_available_models"):
             return await self._engine.list_available_models()
         return []
 
@@ -375,7 +375,7 @@ class OmniVoiceEngineClient:
         if not self._started:
             await self.start()
         assert self._engine is not None
-        if hasattr(self._engine, 'list_available_features'):
+        if hasattr(self._engine, "list_available_features"):
             return await self._engine.list_available_features()
         return self._engine.capabilities.__dict__
 
@@ -385,7 +385,7 @@ class OmniVoiceEngineClient:
         if not self._started:
             await self.start()
         assert self._engine is not None
-        if hasattr(self._engine, 'change_model'):
+        if hasattr(self._engine, "change_model"):
             return await self._engine.change_model(model_name)
         return False
 

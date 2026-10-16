@@ -109,10 +109,7 @@ class VoiceService:
             raise UnsupportedLanguageError(language, self._settings.omnilang_list)
 
         # Pick sample rate: 24000 if pocket_tts included (max quality), else 22050
-        if "pocket_tts" in engine_list:
-            validator_engine = "pocket_tts"
-        else:
-            validator_engine = engine_list[0]
+        validator_engine = "pocket_tts" if "pocket_tts" in engine_list else engine_list[0]
 
         audio_validator = AudioValidator(engine_name=validator_engine)
         validated_path, duration_sec = await audio_validator.validate_and_prepare(
@@ -157,9 +154,7 @@ class VoiceService:
         except Exception as e:
             logger.warning(f"Failed to precompute embedding for {voice_id}: {e}")
 
-        logger.info(
-            f"Voice cloned successfully: {name} ({voice_id}, engines={engine_tag})"
-        )
+        logger.info(f"Voice cloned successfully: {name} ({voice_id}, engines={engine_tag})")
         return voice_id
 
     async def get_voice(self, voice_id: str) -> dict:
@@ -169,12 +164,18 @@ class VoiceService:
         return voice
 
     async def list_voices(
-        self, language: str | None = None, limit: int = 100, offset: int = 0,
+        self,
+        language: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
         engine: str | None = None,
     ) -> list[dict]:
         """List cloned voices with optional filtering."""
         return await self._repository.list(
-            language=language, limit=limit, offset=offset, engine=engine,
+            language=language,
+            limit=limit,
+            offset=offset,
+            engine=engine,
         )
 
     async def delete_voice(self, voice_id: str) -> bool:
@@ -214,9 +215,8 @@ class VoiceService:
         active = self._active_engine
 
         # For routed engines, accept voices tagged with any clone-capable engine
-        if self._settings.TTS_ENGINE == "routed":
-            if voice_engines & CLONE_CAPABLE_ENGINES:
-                return
+        if self._settings.TTS_ENGINE == "routed" and voice_engines & CLONE_CAPABLE_ENGINES:
+            return
 
         # Direct match: active engine is in the voice's engine list
         if active in voice_engines:

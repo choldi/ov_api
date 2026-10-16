@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from tts_api.core.engine_base import EngineCapabilities, TtsEngineBase
 from tts_api.core.exceptions import (
     EngineUnavailableError,
     FeatureNotSupportedError,
     UnsupportedLanguageError,
-    VoiceNotFoundError,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,11 +22,12 @@ class KokoroEngine(TtsEngineBase):
         self._available_models = ["kokoro-v0-1.0", "kokoro-v0-1.1", "kokoro-v1-0"]
         self._current_model = "kokoro-v0-1.0"
         # Kokoro is primarily an English-focused TTS with some multilingual capability
-        self._supported_languages = ["en", "es", "fr", "de", "it", "pt"]  # Based on typical Kokoro models
-        self._supports_cloning = False   # Kokoro typically doesn't support voice cloning
+        # The exact list is model-dependent; these are the typical Kokoro languages.
+        self._supported_languages = ["en", "es", "fr", "de", "it", "pt"]
+        self._supports_cloning = False  # Kokoro typically doesn't support voice cloning
         self._supports_instruct = False  # Kokoro typically doesn't support instruct/voice design
         self._supports_emotions = False  # Kokoro typically doesn't support emotions
-        self._supports_streaming = False # Kokoro typically doesn't support streaming
+        self._supports_streaming = False  # Kokoro typically doesn't support streaming
 
     @property
     def name(self) -> str:

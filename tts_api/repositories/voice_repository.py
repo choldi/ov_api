@@ -71,8 +71,7 @@ class VoiceRepository:
             columns = {row[1] for row in await cursor.fetchall()}
             if "engine" not in columns:
                 await conn.execute(
-                    "ALTER TABLE cloned_voices "
-                    "ADD COLUMN engine TEXT NOT NULL DEFAULT 'omnivoice'"
+                    "ALTER TABLE cloned_voices ADD COLUMN engine TEXT NOT NULL DEFAULT 'omnivoice'"
                 )
                 logger.info("Migrated cloned_voices: added engine column")
             await conn.commit()
@@ -136,7 +135,16 @@ class VoiceRepository:
                 (id, name, language, reference_path, duration_sec, created_at, engine, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (voice_id, name, language, reference_path, duration_sec, now, engine, metadata_json),
+                (
+                    voice_id,
+                    name,
+                    language,
+                    reference_path,
+                    duration_sec,
+                    now,
+                    engine,
+                    metadata_json,
+                ),
             )
             await conn.commit()
             logger.info(f"Created cloned voice '{name}' with ID {voice_id} (engine={engine})")
@@ -167,7 +175,8 @@ class VoiceRepository:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 """
-                SELECT id, name, language, reference_path, duration_sec, created_at, engine, metadata
+                SELECT id, name, language, reference_path, duration_sec,
+                       created_at, engine, metadata
                 FROM cloned_voices
                 WHERE id = ?
                 """,
@@ -209,7 +218,8 @@ class VoiceRepository:
             conn.row_factory = aiosqlite.Row
             cursor = await conn.execute(
                 """
-                SELECT id, name, language, reference_path, duration_sec, created_at, engine, metadata
+                SELECT id, name, language, reference_path, duration_sec,
+                       created_at, engine, metadata
                 FROM cloned_voices
                 WHERE name = ?
                 """,
@@ -234,7 +244,10 @@ class VoiceRepository:
             await conn.close()
 
     async def list(
-        self, language: str | None = None, limit: int = 100, offset: int = 0,
+        self,
+        language: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
         engine: str | None = None,
     ) -> list[dict]:
         """List voices with optional filtering.
@@ -268,7 +281,8 @@ class VoiceRepository:
 
             cursor = await conn.execute(
                 f"""
-                SELECT id, name, language, reference_path, duration_sec, created_at, engine, metadata
+                SELECT id, name, language, reference_path, duration_sec,
+                       created_at, engine, metadata
                 FROM cloned_voices
                 {where}
                 ORDER BY created_at DESC

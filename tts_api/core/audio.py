@@ -12,7 +12,6 @@ from tts_api.core import ffmpeg
 from tts_api.core.exceptions import InvalidReferenceAudioError
 from tts_api.settings import get_settings
 
-
 # Sample rates required by each engine for reference audio
 ENGINE_SAMPLE_RATES: dict[str, int] = {
     "pocket_tts": 24000,
