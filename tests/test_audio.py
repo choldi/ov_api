@@ -17,7 +17,7 @@ from tts_api.core.exceptions import InvalidReferenceAudioError
 @pytest.fixture
 def validator() -> AudioValidator:
     """Validador de audio."""
-    with patch("omnivoice_api.core.audio.get_settings") as mock_get_settings:
+    with patch("tts_api.core.audio.get_settings") as mock_get_settings:
         settings_mock = MagicMock()
         settings_mock.MAX_UPLOAD_SIZE_MB = 10
         settings_mock.MAX_REFERENCE_DURATION_SEC = 30.0

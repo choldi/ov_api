@@ -168,7 +168,7 @@ def fake_engine_client() -> FakeEngineClient:
 def mock_engine_client(monkeypatch: pytest.MonkeyPatch) -> FakeEngineClient:
     fake = FakeEngineClient()
     monkeypatch.setattr(
-        "omnivoice_api.core.engine_client.OmniVoiceEngineClient",
+        "tts_api.core.engine_client.OmniVoiceEngineClient",
         lambda: fake,
     )
     return fake

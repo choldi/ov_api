@@ -21,7 +21,7 @@ def db_path(tmp_path: Path) -> str:
 @pytest.fixture
 def repo(db_path: str) -> VoiceRepository:
     """Repositorio con DB temporal."""
-    with patch("omnivoice_api.repositories.voice_repository.get_settings") as mock_settings:
+    with patch("tts_api.repositories.voice_repository.get_settings") as mock_settings:
         mock_settings.return_value.DATABASE_URL = f"sqlite:///{db_path}"
         return VoiceRepository(db_path=db_path)
 

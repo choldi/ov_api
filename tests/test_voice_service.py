@@ -33,7 +33,7 @@ def mock_audio_validator() -> AsyncMock:
 @pytest.fixture
 def voice_service(mock_repository: AsyncMock, mock_audio_validator: AsyncMock) -> VoiceService:
     """Servicio de voces con dependencias mockeadas."""
-    with patch("omnivoice_api.services.voice_service.get_settings") as mock_settings:
+    with patch("tts_api.services.voice_service.get_settings") as mock_settings:
         mock_settings.return_value.omnilang_list = ["es", "en", "zh"]
         mock_settings.return_value.MAX_REFERENCE_DURATION_SEC = 30.0
         mock_settings.return_value.VOICES_DIR = Path("/tmp/test_voices")
@@ -55,7 +55,7 @@ async def test_clone_voice_success(
     )
     mock_repository.create.return_value = str(uuid4())
 
-    with patch("omnivoice_api.services.voice_service.shutil"):
+    with patch("tts_api.services.voice_service.shutil"):
         voice_id = await voice_service.clone_voice(
             name="test-voice",
             language="es",
@@ -138,7 +138,7 @@ async def test_voice_exists(voice_service: VoiceService, mock_repository: AsyncM
 @pytest.mark.asyncio
 async def test_initialize_creates_defaults() -> None:
     """Test de que initialize crea repository/validator/cache cuando no se inyectan."""
-    with patch("omnivoice_api.services.voice_service.get_settings") as mock_settings:
+    with patch("tts_api.services.voice_service.get_settings") as mock_settings:
         mock_settings.return_value.omnilang_list = ["es"]
         mock_settings.return_value.DATABASE_URL = "sqlite+aiosqlite:///tmp/test.db"
         service = VoiceService()
@@ -152,7 +152,7 @@ async def test_initialize_creates_defaults() -> None:
 @pytest.mark.asyncio
 async def test_initialize_idempotent() -> None:
     """Test de que initialize no recrea dependencias ya inyectadas."""
-    with patch("omnivoice_api.services.voice_service.get_settings") as mock_settings:
+    with patch("tts_api.services.voice_service.get_settings") as mock_settings:
         mock_settings.return_value.omnilang_list = ["es"]
         mock_repo = AsyncMock(spec=VoiceRepository)
         mock_validator = AsyncMock(spec=AudioValidator)
