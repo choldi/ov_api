@@ -35,6 +35,7 @@ def voice_service(mock_repository: AsyncMock, mock_audio_validator: AsyncMock) -
     """Servicio de voces con dependencias mockeadas."""
     with patch("tts_api.services.voice_service.get_settings") as mock_settings:
         mock_settings.return_value.omnilang_list = ["es", "en", "zh"]
+        mock_settings.return_value.TTS_ENGINE = "omnivoice"
         mock_settings.return_value.MAX_REFERENCE_DURATION_SEC = 30.0
         mock_settings.return_value.VOICES_DIR = Path("/tmp/test_voices")
         return VoiceService(
@@ -55,7 +56,15 @@ async def test_clone_voice_success(
     )
     mock_repository.create.return_value = str(uuid4())
 
-    with patch("tts_api.services.voice_service.shutil"):
+    # clone_voice construye su propio AudioValidator por motor (sample rate),
+    # así que hay que mockear ese nombre y no el inyectado en el servicio.
+    with (
+        patch("tts_api.services.voice_service.shutil"),
+        patch(
+            "tts_api.services.voice_service.AudioValidator",
+            return_value=mock_audio_validator,
+        ),
+    ):
         voice_id = await voice_service.clone_voice(
             name="test-voice",
             language="es",
@@ -112,7 +121,7 @@ async def test_list_voices(voice_service: VoiceService, mock_repository: AsyncMo
     mock_repository.list.return_value = [{"id": "1"}, {"id": "2"}]
     voices = await voice_service.list_voices(language="es", limit=10, offset=0)
     assert len(voices) == 2
-    mock_repository.list.assert_called_once_with(language="es", limit=10, offset=0)
+    mock_repository.list.assert_called_once_with(language="es", limit=10, offset=0, engine=None)
 
 
 @pytest.mark.asyncio
