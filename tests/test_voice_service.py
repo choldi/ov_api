@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -41,7 +41,7 @@ def voice_service(mock_repository: AsyncMock, mock_audio_validator: AsyncMock) -
         return VoiceService(
             repository=mock_repository,
             audio_validator=mock_audio_validator,
-            embedding_cache=AsyncMock(),
+            embedding_cache=MagicMock(),
         )
 
 
