@@ -33,9 +33,9 @@ jobs:
           uv run ruff format --check .
       
       - name: Type check with mypy
-        run: uv run mypy omnivoice_api
+        run: uv run mypy tts_api
       
       - name: Run tests
         env:
-          OMNIVOICE_USE_MOCK: "true"
+          TTS_USE_MOCK: "true"
         run: uv run pytest tests/ -v --tb=short
