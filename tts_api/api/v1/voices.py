@@ -107,6 +107,7 @@ async def clone_voice(
         # Auto-transcribe if ref_text not provided and auto-transcribe is enabled
         if not ref_text:
             from tts_api.services import transcription
+
             if transcription.is_available():
                 ref_text = await asyncio.to_thread(
                     transcription.transcribe, tmp_file_path, language
@@ -177,7 +178,10 @@ async def list_cloned_voices(
     - **offset**: Desplazamiento para paginación
     """
     return await voice_service.list_voices(
-        language=language, limit=limit, offset=offset, engine=engine,
+        language=language,
+        limit=limit,
+        offset=offset,
+        engine=engine,
     )
 
 

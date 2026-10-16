@@ -81,9 +81,19 @@ kokoro = [
 transcribe = [
     "faster-whisper>=1.0.0",
 ]
+# Engine: Piper (ONNX local, CPU-first, incluye catalan)
+piper = [
+    "piper-tts>=1.3.0",
+]
+# NOTA: el engine Chatterbox NO se declara aqui (a proposito).
+#   chatterbox-tts fija torch==2.6.0 y numpy<2, mientras que `omnivoice`
+#   fija torch==2.5.1 y `pocket_tts` exige numpy>=2: el lock no resuelve.
+#   Se instala fuera de banda con:  pip install chatterbox-tts
+#   El engine (tts_api/core/engines/chatterbox_engine.py) avisa con
+#   EngineUnavailableError si no esta instalado.
 # All engines
 all-engines = [
-    "tts-api[omnivoice,pocket_tts,edgetts,zono2,kokoro]",
+    "tts-api[omnivoice,pocket_tts,edgetts,zono2,kokoro,piper]",
 ]
 # Dev / test
 dev = [
@@ -165,8 +175,14 @@ unfixable = ["TID252", "PTH118", "PTH120", "PTH123"]
 # Scripts y ejemplos de desarrollo (stándalone, no forman parte del paquete).
 "scripts/*" = ["PLR2004", "PLW2901", "PTH123"]
 "docs/examples/*" = ["PLR2004", "PTH123"]
-# Hooks opcionales de la ABC de engines (warmup/close no abstractos a propósito).
-"tts_api/core/engine_base.py" = ["B027"]
+# Hooks opcionales de la ABC de engines (warmup/close no abstractos a propósito)
+# y change_model(model_name) que las implementaciones no usan.
+"tts_api/core/engine_base.py" = ["B027", "ARG002"]
+# Repositorios: create()/list() con la misma deuda de aridad que api/v1 y engines.
+"tts_api/repositories/voice_repository.py" = ["PLR0913", "PLR0917"]
+# Cache perezoso de whisper en modulo con `global` (mismo motivo que
+# cleanup.py / embedding_cache.py / engine_pool.py / engine_client.py).
+"tts_api/services/transcription.py" = ["PLW0603"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -354,9 +354,7 @@ class OmniVoiceEngine:
         self._device = self._settings.TTS_DEVICE
         self._model = None
         self._stock_voices: list[dict] = []
-        self._use_mock: bool = (
-            self._settings.TTS_USE_MOCK
-        )
+        self._use_mock: bool = self._settings.TTS_USE_MOCK
         self._real_engine_error: str | None = None
 
     def _activate_mock_mode(self, reason: str | None = None) -> None:

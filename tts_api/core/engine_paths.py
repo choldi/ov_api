@@ -28,9 +28,7 @@ def default_install_dir() -> Path:
     3. Directorio actual / omnivoice (fallback para desarrollo)
     """
     return (
-        _get_env_path("TTS_INSTALL_DIR")
-        or _get_env_path("TTS_PATH")
-        or (Path.cwd() / "omnivoice")
+        _get_env_path("TTS_INSTALL_DIR") or _get_env_path("TTS_PATH") or (Path.cwd() / "omnivoice")
     )
 
 

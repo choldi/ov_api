@@ -67,8 +67,8 @@ async def test_readiness_endpoint_with_isolated_install(async_client: AsyncClien
 async def test_readiness_endpoint_without_install(async_client: AsyncClient, monkeypatch):
     """Verifica que /api/v1/health/ready devuelve 503 si la instalación no existe."""
     # Forzamos rutas inexistentes (get_settings() lee el entorno en cada llamada).
-    monkeypatch.setenv("OMNIVOICE_INSTALL_DIR", "/nope/does/not/exist")
-    monkeypatch.setenv("OMNIVOICE_VENV_DIR", "/nope/venv")
+    monkeypatch.setenv("TTS_INSTALL_DIR", "/nope/does/not/exist")
+    monkeypatch.setenv("TTS_VENV_DIR", "/nope/venv")
 
     response = await async_client.get("/api/v1/health/ready")
 

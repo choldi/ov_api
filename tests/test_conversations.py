@@ -172,7 +172,7 @@ async def test_conversation_concatenation():
 
 @pytest.mark.asyncio
 async def test_conversations_endpoint_success(async_client):
-    with patch("omnivoice_api.api.v1.conversations.get_conversation_service") as mock_dep:
+    with patch("tts_api.api.v1.conversations.get_conversation_service") as mock_dep:
         mock_service = AsyncMock()
         mock_service.generate.return_value = AudioResult(
             wav_bytes=_make_wav(),
@@ -237,7 +237,7 @@ async def test_conversations_endpoint_missing_fields(async_client):
 
 @pytest.mark.asyncio
 async def test_conversations_endpoint_voice_not_found(async_client):
-    with patch("omnivoice_api.api.v1.conversations.get_conversation_service") as mock_dep:
+    with patch("tts_api.api.v1.conversations.get_conversation_service") as mock_dep:
         mock_service = AsyncMock()
         mock_service.generate.side_effect = VoiceNotFoundError("nonexistent", "stock")
         mock_dep.return_value.__aenter__ = AsyncMock(return_value=mock_service)

@@ -28,7 +28,7 @@ Thumbs.db
 # ─── Logs y temporales ───
 *.log
 tmp/
-mensaje.txt
+mensaje*.txt
 missatge.txt
 data/
 .env
@@ -50,6 +50,8 @@ data/voices/
 .transformers/
 .coverage
 coverage.xml
-storage/omnivoice.db
-uv.lock
+storage/
+
+# Artificios de tests/formatter
+MagicMock/
 debug_*.py

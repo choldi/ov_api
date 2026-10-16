@@ -18,34 +18,39 @@ def _create_single_engine(name: str) -> TtsEngineBase:
     if name == "mock":
         from tts_api.core.engines.mock_engine import MockEngine
 
-        return MockEngine()
-
-    if name == "pocket_tts":
+        engine_class = MockEngine
+    elif name == "pocket_tts":
         from tts_api.core.engines.pocket_tts_engine import PocketTTSEngine
 
-        return PocketTTSEngine()
-
-    if name == "edgetts":
+        engine_class = PocketTTSEngine
+    elif name == "edgetts":
         from tts_api.core.engines.edgetts_engine import EdgeTTSEngine
 
-        return EdgeTTSEngine()
-
-    if name == "omnivoice":
+        engine_class = EdgeTTSEngine
+    elif name == "omnivoice":
         from tts_api.core.engines.omnivoice_engine_adapter import OmniVoiceAdapter
 
-        return OmniVoiceAdapter()
-
-    if name == "zono2":
+        engine_class = OmniVoiceAdapter
+    elif name == "zono2":
         from tts_api.core.engines.zono2_engine import Zono2Engine
 
-        return Zono2Engine()
-
-    if name == "kokoro":
+        engine_class = Zono2Engine
+    elif name == "kokoro":
         from tts_api.core.engines.kokoro_engine import KokoroEngine
 
-        return KokoroEngine()
+        engine_class = KokoroEngine
+    elif name == "piper":
+        from tts_api.core.engines.piper_engine import PiperEngine
 
-    raise ValueError(f"Engine desconocido: '{name}'")
+        engine_class = PiperEngine
+    elif name == "chatterbox":
+        from tts_api.core.engines.chatterbox_engine import ChatterboxEngine
+
+        engine_class = ChatterboxEngine
+    else:
+        raise ValueError(f"Engine desconocido: '{name}'")
+
+    return engine_class()
 
 
 def _create_routed_engine(routing_json: str) -> TtsEngineBase:

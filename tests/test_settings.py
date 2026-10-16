@@ -16,7 +16,8 @@ class TestSettingsDefaults:
         assert settings.APP_NAME == "TTS API"
 
     def test_app_version(self) -> None:
-        settings = Settings()
+        # Los defaults no deben depender del .env local (que fija 0.2.0).
+        settings = Settings(_env_file=None)
         assert settings.APP_VERSION == "0.1.0"
 
     def test_debug_default(self) -> None:
@@ -98,6 +99,41 @@ class TestSettingsValidation:
     def test_invalid_omnivoice_dtype(self) -> None:
         with pytest.raises(ValidationError):
             Settings(TTS_DTYPE="bfloat16")
+
+
+class TestNewEngineSettings:
+    """Settings for the piper and chatterbox engines."""
+
+    @pytest.mark.parametrize("engine", ["piper", "chatterbox"])
+    def test_tts_engine_accepts_new_engines(self, engine: str) -> None:
+        settings = Settings(TTS_ENGINE=engine)  # type: ignore[arg-type]
+        assert engine == settings.TTS_ENGINE
+
+    def test_tts_engine_rejects_unknown_engine(self) -> None:
+        with pytest.raises(ValidationError):
+            Settings(TTS_ENGINE="bogus")  # type: ignore[arg-type]
+
+    def test_piper_defaults(self) -> None:
+        settings = Settings()
+        assert settings.PIPER_VOICE == "ca_ES-upc_ona-medium"
+        assert settings.PIPER_USE_CUDA is False
+        assert settings.PIPER_AUTO_DOWNLOAD is True
+
+    def test_piper_voice_dir_override(self) -> None:
+        settings = Settings(PIPER_VOICE="ca_ES-upc_pau-x_low", PIPER_USE_CUDA=True)
+        assert settings.PIPER_VOICE == "ca_ES-upc_pau-x_low"
+        assert settings.PIPER_USE_CUDA is True
+
+    def test_chatterbox_defaults(self) -> None:
+        settings = Settings()
+        assert settings.CHATTERBOX_T3_MODEL == "v3"
+        assert settings.CHATTERBOX_DEVICE == "cuda"
+        assert settings.CHATTERBOX_EXAGGERATION == 0.5
+        assert settings.CHATTERBOX_CFG_WEIGHT == 0.5
+
+    def test_chatterbox_invalid_t3_model(self) -> None:
+        with pytest.raises(ValidationError):
+            Settings(CHATTERBOX_T3_MODEL="v9")
 
 
 class TestGetSettings:

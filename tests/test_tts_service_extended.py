@@ -228,7 +228,7 @@ async def test_synthesize_clone_success() -> None:
 async def test_get_engine_client_uses_shared() -> None:
     """Test de que _get_engine_client reutiliza el cliente compartido."""
     service = TtsService(engine_client=None, voice_service=AsyncMock())
-    with patch("omnivoice_api.services.tts.get_shared_engine_client") as shared_getter:
+    with patch("tts_api.services.tts.get_shared_engine_client") as shared_getter:
         mock_instance = AsyncMock()
         shared_getter.return_value = mock_instance
         client = await service._get_engine_client()
@@ -241,7 +241,7 @@ async def test_get_engine_client_uses_shared() -> None:
 async def test_get_voice_service_creates_new() -> None:
     """Test de que _get_voice_service crea un servicio nuevo si es None."""
     service = TtsService(engine_client=AsyncMock(), voice_service=None)
-    with patch("omnivoice_api.services.tts.VoiceService") as voice_service_cls:
+    with patch("tts_api.services.tts.VoiceService") as voice_service_cls:
         mock_instance = AsyncMock()
         voice_service_cls.return_value = mock_instance
         vs = await service._get_voice_service()

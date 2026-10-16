@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -33,14 +33,15 @@ def mock_audio_validator() -> AsyncMock:
 @pytest.fixture
 def voice_service(mock_repository: AsyncMock, mock_audio_validator: AsyncMock) -> VoiceService:
     """Servicio de voces con dependencias mockeadas."""
-    with patch("omnivoice_api.services.voice_service.get_settings") as mock_settings:
+    with patch("tts_api.services.voice_service.get_settings") as mock_settings:
         mock_settings.return_value.omnilang_list = ["es", "en", "zh"]
+        mock_settings.return_value.TTS_ENGINE = "omnivoice"
         mock_settings.return_value.MAX_REFERENCE_DURATION_SEC = 30.0
         mock_settings.return_value.VOICES_DIR = Path("/tmp/test_voices")
         return VoiceService(
             repository=mock_repository,
             audio_validator=mock_audio_validator,
-            embedding_cache=AsyncMock(),
+            embedding_cache=MagicMock(),
         )
 
 
@@ -55,7 +56,15 @@ async def test_clone_voice_success(
     )
     mock_repository.create.return_value = str(uuid4())
 
-    with patch("omnivoice_api.services.voice_service.shutil"):
+    # clone_voice construye su propio AudioValidator por motor (sample rate),
+    # así que hay que mockear ese nombre y no el inyectado en el servicio.
+    with (
+        patch("tts_api.services.voice_service.shutil"),
+        patch(
+            "tts_api.services.voice_service.AudioValidator",
+            return_value=mock_audio_validator,
+        ),
+    ):
         voice_id = await voice_service.clone_voice(
             name="test-voice",
             language="es",
@@ -112,7 +121,7 @@ async def test_list_voices(voice_service: VoiceService, mock_repository: AsyncMo
     mock_repository.list.return_value = [{"id": "1"}, {"id": "2"}]
     voices = await voice_service.list_voices(language="es", limit=10, offset=0)
     assert len(voices) == 2
-    mock_repository.list.assert_called_once_with(language="es", limit=10, offset=0)
+    mock_repository.list.assert_called_once_with(language="es", limit=10, offset=0, engine=None)
 
 
 @pytest.mark.asyncio
@@ -138,7 +147,7 @@ async def test_voice_exists(voice_service: VoiceService, mock_repository: AsyncM
 @pytest.mark.asyncio
 async def test_initialize_creates_defaults() -> None:
     """Test de que initialize crea repository/validator/cache cuando no se inyectan."""
-    with patch("omnivoice_api.services.voice_service.get_settings") as mock_settings:
+    with patch("tts_api.services.voice_service.get_settings") as mock_settings:
         mock_settings.return_value.omnilang_list = ["es"]
         mock_settings.return_value.DATABASE_URL = "sqlite+aiosqlite:///tmp/test.db"
         service = VoiceService()
@@ -152,7 +161,7 @@ async def test_initialize_creates_defaults() -> None:
 @pytest.mark.asyncio
 async def test_initialize_idempotent() -> None:
     """Test de que initialize no recrea dependencias ya inyectadas."""
-    with patch("omnivoice_api.services.voice_service.get_settings") as mock_settings:
+    with patch("tts_api.services.voice_service.get_settings") as mock_settings:
         mock_settings.return_value.omnilang_list = ["es"]
         mock_repo = AsyncMock(spec=VoiceRepository)
         mock_validator = AsyncMock(spec=AudioValidator)

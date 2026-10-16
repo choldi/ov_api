@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from tts_api.core.engine_factory import _create_single_engine, create_engine
 from tts_api.core.engine_base import TtsEngineBase
-from tts_api.settings import Settings
+from tts_api.core.engine_factory import _create_single_engine, create_engine
 
 
 def test_create_single_engine_mock():
@@ -51,6 +50,20 @@ def test_create_single_engine_kokoro():
     assert engine.name == "kokoro"
 
 
+def test_create_single_engine_piper():
+    """Test creating a piper engine."""
+    engine = _create_single_engine("piper")
+    assert isinstance(engine, TtsEngineBase)
+    assert engine.name == "piper"
+
+
+def test_create_single_engine_chatterbox():
+    """Test creating a chatterbox engine."""
+    engine = _create_single_engine("chatterbox")
+    assert isinstance(engine, TtsEngineBase)
+    assert engine.name == "chatterbox"
+
+
 def test_create_single_engine_unknown():
     """Test creating an unknown engine raises ValueError."""
     with pytest.raises(ValueError, match="Engine desconocido"):
@@ -76,3 +89,17 @@ def test_create_engine_with_kokoro_param():
     engine = create_engine("kokoro")
     assert isinstance(engine, TtsEngineBase)
     assert engine.name == "kokoro"
+
+
+def test_create_engine_with_piper_param():
+    """Test creating engine with explicit parameter."""
+    engine = create_engine("piper")
+    assert isinstance(engine, TtsEngineBase)
+    assert engine.name == "piper"
+
+
+def test_create_engine_with_chatterbox_param():
+    """Test creating engine with explicit parameter."""
+    engine = create_engine("chatterbox")
+    assert isinstance(engine, TtsEngineBase)
+    assert engine.name == "chatterbox"
