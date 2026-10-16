@@ -85,16 +85,15 @@ transcribe = [
 piper = [
     "piper-tts>=1.3.0",
 ]
-# Engine: Chatterbox Multilingual v3 (GPU, clonado zero-shot)
-chatterbox = [
-    "chatterbox-tts>=0.1.0",
-    "torch>=2.5.0",
-    "torchaudio>=2.5.0",
-    "soundfile>=0.12.0",
-]
+# NOTA: el engine Chatterbox NO se declara aqui (a proposito).
+#   chatterbox-tts fija torch==2.6.0 y numpy<2, mientras que `omnivoice`
+#   fija torch==2.5.1 y `pocket_tts` exige numpy>=2: el lock no resuelve.
+#   Se instala fuera de banda con:  pip install chatterbox-tts
+#   El engine (tts_api/core/engines/chatterbox_engine.py) avisa con
+#   EngineUnavailableError si no esta instalado.
 # All engines
 all-engines = [
-    "tts-api[omnivoice,pocket_tts,edgetts,zono2,kokoro,piper,chatterbox]",
+    "tts-api[omnivoice,pocket_tts,edgetts,zono2,kokoro,piper]",
 ]
 # Dev / test
 dev = [
